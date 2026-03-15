@@ -1,0 +1,36 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    platform: linux/arm64
+    ports:
+      - "8010:8000"
+    volumes:
+      - ./backend:/app
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - postgres
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  postgres:
+    image: postgres:15
+    platform: linux/arm64
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: feedpilot
+      POSTGRES_PASSWORD: feedpilot
+      POSTGRES_DB: feedpilot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    platform: linux/arm64
+    ports:
+      - "6380:6379"
+
+volumes:
+  postgres_data:

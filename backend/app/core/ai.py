@@ -3,7 +3,8 @@
 Provides a factory function and a high-level wrapper
 for communicating with the Anthropic Claude API.
 """
-
+import json
+import re
 import anthropic
 from app.core.config import get_settings
 
@@ -22,6 +23,19 @@ def get_client() -> anthropic.Anthropic:
     """
     return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
+def _strip_markdown(text: str) -> str:
+    """Strip markdown code fences if model returns them.
+
+    Args:
+        text: Raw model output.
+
+    Returns:
+        Clean JSON string without markdown wrapping.
+    """
+    text = text.strip()
+    text = re.sub(r'^```(?:json)?\s*', '', text)
+    text = re.sub(r'\s*```$', '', text)
+    return text.strip()
 
 def ask_claude(prompt: str, system: str | None = None) -> dict[str, str | int]:
     """Send a prompt to Claude and return the response with token usage.

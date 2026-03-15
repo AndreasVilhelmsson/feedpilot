@@ -1,25 +1,11 @@
-"""Business logic for the FeedPilot analyze feature.
-
-This service layer orchestrates AI calls and enforces
-business rules independently of HTTP or database concerns.
-"""
+"""Business logic for the FeedPilot analyze feature."""
 
 from app.core.ai import ask_claude
-
-FEEDPILOT_SYSTEM_PROMPT = """
-Du är FeedPilot, en AI-expert på e-commerce och produktdata.
-Du hjälper e-handlare att förstå och förbättra sin produktdata.
-Svara alltid på svenska, var konkret och ge alltid actionable råd.
-Formatera svar som JSON när användaren ber om analys.
-"""
+from app.prompts.prompt_manager import get_prompt, get_version
 
 
 class AnalyzeService:
-    """Handles all business logic for product data analysis.
-
-    Separates AI orchestration from HTTP concerns,
-    making it independently testable and reusable.
-    """
+    """Handles all business logic for product data analysis."""
 
     async def analyze_question(self, question: str) -> dict[str, str | int]:
         """Analyze a commerce question using Claude.
@@ -35,8 +21,18 @@ class AnalyzeService:
         """
         return ask_claude(
             prompt=question,
-            system=FEEDPILOT_SYSTEM_PROMPT,
+            system=get_prompt("feedfixer_v1"),
         )
+
+    def get_active_prompt_version(self) -> str:
+        """Return the currently active prompt version.
+
+        Useful for logging and debugging in production.
+
+        Returns:
+            Semantic version string of the active prompt.
+        """
+        return get_version("feedfixer_v1")
 
 
 def get_analyze_service() -> AnalyzeService:

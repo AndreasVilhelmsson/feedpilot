@@ -2,8 +2,10 @@
 
 from fastapi import FastAPI
 from app.core.config import get_settings
+from app.core.database import create_tables
 from app.api.health import router as health_router
 from app.api.analyze import router as analyze_router
+from app.api.ingest import router as ingest_router
 
 settings = get_settings()
 
@@ -13,8 +15,16 @@ app = FastAPI(
     debug=settings.debug,
 )
 
+
+@app.on_event("startup")
+async def startup() -> None:
+    """Create database tables on startup if they do not exist."""
+    create_tables()
+
+
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(analyze_router, prefix="/api/v1")
+app.include_router(ingest_router, prefix="/api/v1")
 
 
 @app.get("/")

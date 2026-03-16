@@ -5,7 +5,7 @@ to AnalyzeService. No business logic lives here.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from app.models.analyze import AnalyzeRequest, AnalyzeResponse
+from app.schemas.analyze import AnalyzeRequest, AnalyzeResponse
 from app.services.analyze_service import AnalyzeService, get_analyze_service
 
 router = APIRouter(

@@ -5,7 +5,7 @@ Sessions are managed via FastAPI dependency injection.
 """
 
 from collections.abc import Generator
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from app.core.config import get_settings
 from app.models.product import Base
@@ -21,21 +21,20 @@ engine = create_engine(
 
 
 def create_tables() -> None:
-    """Create all tables if they do not exist.
+    """Create all tables and enable pgvector extension.
 
     Called once on application startup.
     """
+    with engine.connect() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.commit()
+
+    from app.models.embedding import ProductEmbedding
     Base.metadata.create_all(bind=engine)
 
 
 def get_db() -> Generator[Session, None, None]:
-    """Yield a database session and ensure it is closed.
-
-    Used as a FastAPI dependency via Depends(get_db).
-
-    Yields:
-        An active SQLAlchemy Session.
-    """
+    """Yield a database session and ensure it is closed."""
     SessionLocal = sessionmaker(
         bind=engine,
         autocommit=False,

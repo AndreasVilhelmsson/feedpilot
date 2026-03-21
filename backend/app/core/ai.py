@@ -37,12 +37,17 @@ def _strip_markdown(text: str) -> str:
     text = re.sub(r'\s*```$', '', text)
     return text.strip()
 
-def ask_claude(prompt: str, system: str | None = None) -> dict[str, str | int]:
+def ask_claude(
+    prompt: str,
+    system: str | None = None,
+    max_tokens: int = 1000,
+) -> dict[str, str | int]:
     """Send a prompt to Claude and return the response with token usage.
 
     Args:
         prompt: The user message to send to the model.
         system: Optional system prompt that sets Claude's behavior.
+        max_tokens: Maximum tokens in the model response.
 
     Returns:
         A dict with keys:
@@ -57,7 +62,7 @@ def ask_claude(prompt: str, system: str | None = None) -> dict[str, str | int]:
     client = get_client()
     kwargs: dict = {
         "model": "claude-sonnet-4-6",
-        "max_tokens": 1000,
+        "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}],
     }
     if system:

@@ -8,6 +8,7 @@ from app.api.analyze import router as analyze_router
 from app.api.ingest import router as ingest_router
 from app.api.embeddings import router as embeddings_router
 from app.api.search import router as search_router
+from app.api.enrich import router as enrich_router
 
 settings = get_settings()
 
@@ -29,6 +30,7 @@ app.include_router(analyze_router, prefix="/api/v1")
 app.include_router(ingest_router, prefix="/api/v1")
 app.include_router(embeddings_router, prefix="/api/v1")
 app.include_router(search_router, prefix="/api/v1")
+app.include_router(enrich_router, prefix="/api/v1")
 
 
 @app.get("/")

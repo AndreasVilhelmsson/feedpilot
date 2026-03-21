@@ -29,7 +29,8 @@ def create_tables() -> None:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         conn.commit()
 
-    from app.models.embedding import ProductEmbedding
+    from app.models.embedding import ProductEmbedding  # noqa: F401
+    from app.models.analysis_result import AnalysisResult  # noqa: F401
     Base.metadata.create_all(bind=engine)
 
 

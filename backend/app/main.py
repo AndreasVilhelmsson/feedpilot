@@ -10,6 +10,7 @@ from app.api.embeddings import router as embeddings_router
 from app.api.search import router as search_router
 from app.api.enrich import router as enrich_router
 from app.api.variants import router as variants_router
+from app.api.images import router as images_router
 
 settings = get_settings()
 
@@ -33,6 +34,7 @@ app.include_router(embeddings_router, prefix="/api/v1")
 app.include_router(search_router, prefix="/api/v1")
 app.include_router(enrich_router, prefix="/api/v1")
 app.include_router(variants_router, prefix="/api/v1")
+app.include_router(images_router, prefix="/api/v1")
 
 
 @app.get("/")

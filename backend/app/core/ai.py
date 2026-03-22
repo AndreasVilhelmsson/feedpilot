@@ -77,3 +77,66 @@ def ask_claude(
         "output_tokens": response.usage.output_tokens,
         "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
     }
+
+
+def ask_claude_vision(
+    image_data: str,
+    media_type: str,
+    prompt: str,
+    system: str = "",
+    max_tokens: int = 2000,
+) -> dict[str, str | int]:
+    """Send an image + text prompt to Claude and return the response.
+
+    Uses the Anthropic multimodal content format to pass a base64-encoded
+    image alongside a text prompt. The image is processed before the text
+    in the content list so Claude sees the visual context first.
+
+    Args:
+        image_data: Base64-encoded image bytes as a string.
+        media_type: MIME type of the image, e.g. 'image/jpeg' or 'image/png'.
+        prompt: Text instruction describing what Claude should do with the image.
+        system: Optional system prompt that sets Claude's behaviour.
+        max_tokens: Maximum tokens in the model response.
+
+    Returns:
+        A dict with keys:
+            answer: Claude's text response.
+            input_tokens: Number of tokens in the request.
+            output_tokens: Number of tokens in the response.
+            total_tokens: Sum of input and output tokens.
+
+    Raises:
+        anthropic.APIError: If the API call fails.
+    """
+    client = get_client()
+
+    content: list[dict] = [
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": media_type,
+                "data": image_data,
+            },
+        },
+        {"type": "text", "text": prompt},
+    ]
+
+    kwargs: dict = {
+        "model": "claude-sonnet-4-6",
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": content}],
+    }
+    if system:
+        kwargs["system"] = system
+
+    response = client.messages.create(**kwargs)
+    text = response.content[0].text
+
+    return {
+        "answer": text,
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+        "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
+    }

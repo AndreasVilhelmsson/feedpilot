@@ -1,0 +1,54 @@
+[
+  {
+    "product_sku": "SHOE-002",
+    "sku_id": "SHOE-002-BLK-42",
+    "ean": "7318571987001",
+    "color": "svart",
+    "size": "42",
+    "material": "läder",
+    "attributes": {
+      "width": "normal",
+      "sole_type": "lädersula med gummiförstärkning",
+      "gender": "herr"
+    }
+  },
+  {
+    "product_sku": "SHOE-002",
+    "sku_id": "SHOE-002-BLK-43",
+    "ean": "7318571987002",
+    "color": "svart",
+    "size": "43",
+    "material": "läder",
+    "attributes": {
+      "width": "normal",
+      "sole_type": "lädersula med gummiförstärkning",
+      "gender": "herr"
+    }
+  },
+  {
+    "product_sku": "SHOE-002",
+    "sku_id": "SHOE-002-BRN-42",
+    "ean": "7318571987003",
+    "color": "brun",
+    "size": "42",
+    "material": "läder",
+    "attributes": {
+      "width": "normal",
+      "sole_type": "lädersula med gummiförstärkning",
+      "gender": "herr"
+    }
+  },
+  {
+    "product_sku": "SHOE-002",
+    "sku_id": "SHOE-002-BRN-43",
+    "ean": "7318571987004",
+    "color": "brun",
+    "size": "43",
+    "material": "läder",
+    "attributes": {
+      "width": "normal",
+      "sole_type": "lädersula med gummiförstärkning",
+      "gender": "herr"
+    }
+  }
+]

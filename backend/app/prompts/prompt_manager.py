@@ -6,12 +6,13 @@ of application code — following the principle of treating
 prompts as software artifacts with version control.
 """
 
-from app.prompts.versions import v1_feedfixer, v2_enrichment
+from app.prompts.versions import v1_feedfixer, v2_enrichment, v3_variant_seo
 
 
 PROMPT_REGISTRY: dict[str, object] = {
     "feedfixer_v1": v1_feedfixer,
     "enrichment_v2": v2_enrichment,
+    "variant_seo_v3": v3_variant_seo,
 }
 
 

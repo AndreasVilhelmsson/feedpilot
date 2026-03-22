@@ -31,6 +31,7 @@ def create_tables() -> None:
 
     from app.models.embedding import ProductEmbedding  # noqa: F401
     from app.models.analysis_result import AnalysisResult  # noqa: F401
+    from app.models.variant import ProductVariant  # noqa: F401
     Base.metadata.create_all(bind=engine)
 
 

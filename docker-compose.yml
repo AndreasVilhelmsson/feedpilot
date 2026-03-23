@@ -1,5 +1,6 @@
 services:
   backend:
+    container_name: api
     build:
       context: ./backend
       dockerfile: Dockerfile

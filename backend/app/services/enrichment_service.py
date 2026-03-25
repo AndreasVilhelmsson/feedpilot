@@ -2,14 +2,17 @@
 
 Orchestrates the full enrichment pipeline:
   1. Fetch product from database
-  2. Retrieve RAG context via semantic search
-  3. Call Claude with the v2 enrichment prompt
-  4. Parse and persist the analysis result
-  5. Return a structured enrichment response
+  2. Convert to CanonicalProduct for structured access
+  3. Retrieve RAG context via semantic search
+  4. Call Claude with the v2 enrichment prompt
+  5. Parse and persist the analysis result
+  6. Return a structured enrichment response
 """
 
 import json
 import re
+from typing import Any
+
 from sqlalchemy.orm import Session
 
 from app.core.ai import ask_claude
@@ -17,10 +20,18 @@ from app.models.analysis_result import AnalysisResult
 from app.models.product import Product
 from app.prompts.prompt_manager import get_prompt, get_version
 from app.repositories.product_repository import ProductRepository, get_product_repository
+from app.schemas.canonical import CanonicalProduct
 
-PROMPT_NAME = "enrichment_v2"
-RAG_CONTEXT_LIMIT = 3
-MAX_TOKENS = 4096
+PROMPT_NAME: str = "enrichment_v2"
+RAG_CONTEXT_LIMIT: int = 3
+
+# Max tokens per enrichment priority level
+MAX_TOKENS_BY_PRIORITY: dict[str, int] = {
+    "critical": 4096,
+    "high": 2048,
+    "medium": 1024,
+    "low": 512,
+}
 
 
 def _strip_markdown(text: str) -> str:
@@ -38,24 +49,34 @@ def _strip_markdown(text: str) -> str:
     return text.strip()
 
 
-def _build_user_message(product: Product, rag_context: list[dict]) -> str:
-    """Serialize product data and RAG context into the Claude user message.
+def _build_user_message(
+    canonical: CanonicalProduct,
+    rag_context: list[dict],
+    missing_fields: list[str],
+) -> str:
+    """Serialise canonical product data and RAG context into the Claude user message.
 
     Args:
-        product: The product ORM instance to enrich.
+        canonical: CanonicalProduct representation of the product to enrich.
         rag_context: List of semantically similar products from RAG search.
+        missing_fields: Core fields that are missing and should be enriched.
 
     Returns:
-        JSON-serializable string to pass as the Claude user message.
+        JSON string to pass as the Claude user message.
     """
-    payload = {
+    payload: dict[str, Any] = {
         "product": {
-            "sku_id": product.sku_id,
-            "title": product.title,
-            "description": product.description,
-            "category": product.category,
-            "price": product.price,
-            "attributes": product.attributes or {},
+            "sku_id": canonical.sku_id,
+            "title": canonical.title,
+            "description": canonical.description,
+            "brand": canonical.brand,
+            "category": canonical.category,
+            "price": canonical.price,
+            "color": canonical.color,
+            "material": canonical.material,
+            "size": canonical.size,
+            "gender": canonical.gender,
+            "attributes": canonical.extra_attributes,
         },
         "rag_context": [
             {
@@ -67,6 +88,10 @@ def _build_user_message(product: Product, rag_context: list[dict]) -> str:
             }
             for ctx in rag_context
         ],
+        "missing_fields": missing_fields,
+        "enrichment_instruction": (
+            f"Följande kärnfält saknas och ska enrichas: {missing_fields}"
+        ),
     }
     return json.dumps(payload, ensure_ascii=False)
 
@@ -82,11 +107,48 @@ class EnrichmentService:
         """
         self._repo = product_repo
 
+    def _product_to_canonical(self, product: Product) -> CanonicalProduct:
+        """Convert a SQLAlchemy Product ORM instance to a CanonicalProduct.
+
+        Structured sub-fields (brand, color, material, size, size_system,
+        gender) are extracted from the product's attributes JSON column.
+
+        Args:
+            product: Product ORM instance from the database.
+
+        Returns:
+            CanonicalProduct with all available fields populated.
+        """
+        attrs: dict[str, Any] = product.attributes or {}
+        known_attr_keys = {"brand", "color", "material", "size", "size_system", "gender"}
+
+        return CanonicalProduct(
+            sku_id=product.sku_id,
+            feed_source=product.feed_source or "unknown",
+            detected_source=product.detected_source or "generic_csv",
+            title=product.title,
+            description=product.description,
+            brand=attrs.get("brand"),
+            category=product.category,
+            price=product.price,
+            color=attrs.get("color"),
+            material=attrs.get("material"),
+            size=attrs.get("size"),
+            size_system=attrs.get("size_system"),
+            gender=attrs.get("gender"),
+            extra_attributes={
+                k: str(v) for k, v in attrs.items() if k not in known_attr_keys
+            },
+            raw_data=product.raw_data or {},
+            quality_warnings=product.quality_warnings or [],
+        )
+
     def enrich_product(self, sku_id: str, db: Session) -> dict:
         """Run the full enrichment pipeline for a single product.
 
-        Fetches the product, retrieves RAG context, calls Claude,
-        persists the result and returns a structured enrichment dict.
+        Fetches the product, converts to canonical schema, retrieves RAG
+        context, calls Claude, persists the result and returns a structured
+        enrichment dict.
 
         Args:
             sku_id: The SKU identifier of the product to enrich.
@@ -95,30 +157,34 @@ class EnrichmentService:
         Returns:
             Dict containing sku_id, analysis_id, overall_score,
             enriched_fields, issues, return_risk, action_items,
-            prompt_version and total_tokens.
+            prompt_version, total_tokens and enrichment_priority.
 
         Raises:
             ValueError: If no product with the given sku_id exists.
+            RuntimeError: If Claude returns no JSON object.
             json.JSONDecodeError: If Claude returns malformed JSON.
         """
         product = self._repo.get_by_sku(sku_id, db)
         if product is None:
             raise ValueError(f"Produkt med sku_id '{sku_id}' hittades inte.")
 
-        rag_query = " ".join(
-            filter(None, [product.title, product.category])
-        )
+        canonical = self._product_to_canonical(product)
+        missing_fields = canonical.missing_core_fields()
+        priority = canonical.enrichment_priority()
+        max_tokens = MAX_TOKENS_BY_PRIORITY[priority]
+
+        rag_query = " ".join(filter(None, [product.title, product.category]))
         rag_context = self._repo.semantic_search(
             query=rag_query,
             db=db,
             limit=RAG_CONTEXT_LIMIT,
         )
 
-        user_message = _build_user_message(product, rag_context)
+        user_message = _build_user_message(canonical, rag_context, missing_fields)
         ai_response = ask_claude(
             prompt=user_message,
             system=get_prompt(PROMPT_NAME),
-            max_tokens=MAX_TOKENS,
+            max_tokens=max_tokens,
         )
 
         raw_text = ai_response["answer"]
@@ -156,6 +222,8 @@ class EnrichmentService:
             "action_items": parsed.get("action_items", []),
             "prompt_version": get_version(PROMPT_NAME),
             "total_tokens": ai_response["total_tokens"],
+            "enrichment_priority": priority,
+            "missing_fields": missing_fields,
         }
 
     def enrich_bulk(

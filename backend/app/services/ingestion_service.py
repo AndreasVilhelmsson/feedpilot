@@ -5,16 +5,58 @@ connector → mapping → normalization → validation → persistence.
 """
 
 from typing import Any
+
 from sqlalchemy.orm import Session
+
 from app.ingestion.connectors.csv_connector import read_csv
 from app.ingestion.mapping.field_mapper import FieldMapper
 from app.ingestion.normalizer import normalize_row
 from app.ingestion.validators import validate_row
 from app.models.product import Product
+from app.schemas.canonical import CanonicalProduct
 
 
 class IngestionService:
     """Orchestrates the full product feed ingestion pipeline."""
+
+    def _canonical_to_model(self, canonical: CanonicalProduct) -> Product:
+        """Convert a CanonicalProduct to a SQLAlchemy Product instance.
+
+        All structured sub-fields (brand, color, material, size, gender)
+        are merged into the product's attributes JSON column.
+
+        Args:
+            canonical: Validated CanonicalProduct from the pipeline.
+
+        Returns:
+            Unsaved Product ORM instance ready for database insertion.
+        """
+        attributes: dict[str, Any] = {
+            k: v
+            for k, v in {
+                "brand": canonical.brand,
+                "color": canonical.color,
+                "material": canonical.material,
+                "size": canonical.size,
+                "size_system": canonical.size_system,
+                "gender": canonical.gender,
+                **canonical.extra_attributes,
+            }.items()
+            if v is not None
+        }
+
+        return Product(
+            sku_id=canonical.sku_id,
+            title=canonical.title,
+            description=canonical.description,
+            category=canonical.category,
+            price=canonical.price,
+            attributes=attributes,
+            raw_data=canonical.raw_data,
+            feed_source=canonical.feed_source,
+            detected_source=canonical.detected_source,
+            quality_warnings=canonical.quality_warnings,
+        )
 
     def ingest_csv(
         self,
@@ -49,46 +91,47 @@ class IngestionService:
         all_warnings: list[dict] = []
 
         for row in rows:
-            mapped = mapper.transform_row(row)
-            normalized = normalize_row(mapped)
-            warnings = validate_row(normalized)
-
-            sku_id = normalized.get("sku_id")
-            if not sku_id:
+            try:
+                canonical: CanonicalProduct = mapper.transform_row(row)
+            except ValueError as exc:
                 skipped += 1
+                all_warnings.append({
+                    "sku_id": "UNKNOWN",
+                    "warnings": [{
+                        "field": "sku_id",
+                        "severity": "high",
+                        "message": str(exc),
+                    }],
+                })
                 continue
 
-            if warnings:
-                all_warnings.append({
-                    "sku_id": sku_id,
-                    "warnings": warnings,
-                })
+            canonical.feed_source = feed_source
+            canonical = normalize_row(canonical)
+            canonical = validate_row(canonical)
 
-            product_data = {
-                "sku_id": sku_id,
-                "title": normalized.get("title"),
-                "description": normalized.get("description"),
-                "category": normalized.get("category"),
-                "price": normalized.get("price"),
-                "attributes": normalized.get("attributes"),
-                "raw_data": normalized.get("raw_data"),
-                "feed_source": feed_source,
-                "detected_source": detected_source,
-                "quality_warnings": warnings,
-            }
+            if canonical.quality_warnings:
+                all_warnings.append({
+                    "sku_id": canonical.sku_id,
+                    "warnings": canonical.quality_warnings,
+                })
 
             existing = (
                 db.query(Product)
-                .filter_by(sku_id=sku_id)
+                .filter_by(sku_id=canonical.sku_id)
                 .first()
             )
 
             if existing:
-                for field, value in product_data.items():
-                    setattr(existing, field, value)
+                product = self._canonical_to_model(canonical)
+                for field in (
+                    "title", "description", "category", "price",
+                    "attributes", "raw_data", "feed_source",
+                    "detected_source", "quality_warnings",
+                ):
+                    setattr(existing, field, getattr(product, field))
                 updated += 1
             else:
-                db.add(Product(**product_data))
+                db.add(self._canonical_to_model(canonical))
                 created += 1
 
         db.commit()

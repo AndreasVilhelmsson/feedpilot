@@ -19,6 +19,14 @@ engine = create_engine(
     max_overflow=10,
 )
 
+# Module-level session factory — used by both FastAPI (via get_db)
+# and ARQ worker tasks that manage their own session lifecycle.
+SessionLocal = sessionmaker(
+    bind=engine,
+    autocommit=False,
+    autoflush=False,
+)
+
 
 def create_tables() -> None:
     """Create all tables and enable pgvector extension.
@@ -33,16 +41,12 @@ def create_tables() -> None:
     from app.models.analysis_result import AnalysisResult  # noqa: F401
     from app.models.variant import ProductVariant  # noqa: F401
     from app.models.customer_pim_config import CustomerPIMConfig  # noqa: F401
+    from app.models.job import Job  # noqa: F401
     Base.metadata.create_all(bind=engine)
 
 
 def get_db() -> Generator[Session, None, None]:
     """Yield a database session and ensure it is closed."""
-    SessionLocal = sessionmaker(
-        bind=engine,
-        autocommit=False,
-        autoflush=False,
-    )
     db = SessionLocal()
     try:
         yield db

@@ -8,23 +8,28 @@ Receives HTTP requests and delegates all logic to EnrichmentService.
 No business logic lives here.
 
 Routes:
-    POST /enrich/bulk        — enrich a batch of products (defined first
-                               to prevent FastAPI matching 'bulk' as sku_id)
+    POST /enrich/bulk        — queue an async ARQ enrichment job (defined
+                               first to prevent FastAPI matching 'bulk' as
+                               sku_id)
     POST /enrich/{sku_id}    — enrich a single product by SKU
 """
 
 import json
+import uuid
 
+from arq import create_pool
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.models.job import Job
 from app.schemas.enrich import (
     BulkEnrichRequest,
-    BulkEnrichResponse,
     EnrichResponse,
 )
+from app.schemas.job import EnqueueResponse
 from app.services.enrichment_service import EnrichmentService, get_enrichment_service
+from app.workers.settings import get_redis_settings
 
 router = APIRouter(
     prefix="/enrich",
@@ -34,39 +39,62 @@ router = APIRouter(
 
 @router.post(
     "/bulk",
-    response_model=BulkEnrichResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Enricha flera produkter i ett batch-anrop",
+    response_model=EnqueueResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Köa asynkront bulk-enrichment",
     description=(
-        "Kör enrichment-pipeline på upp till `limit` produkter. "
-        "Fel på enskilda produkter samlas i `errors` utan att avbryta batchen."
+        "Skapar ett bakgrundsjobb som enrichar upp till `limit` produkter. "
+        "Returnerar omedelbart med ett job_id. "
+        "Följ progress på GET /api/v1/jobs/{job_id}."
     ),
 )
-def enrich_bulk(
+async def enrich_bulk(
     request: BulkEnrichRequest,
-    service: EnrichmentService = Depends(get_enrichment_service),
     db: Session = Depends(get_db),
-) -> BulkEnrichResponse:
-    """Enrich a batch of products and return aggregated results.
+) -> EnqueueResponse:
+    """Queue an async ARQ enrichment job and return a job_id.
 
     Args:
         request: Validated request body containing `limit`.
-        service: Injected EnrichmentService instance.
         db: Injected database session.
 
     Returns:
-        BulkEnrichResponse with processed count, results and errors.
+        EnqueueResponse with job_id and polling instructions.
 
     Raises:
-        HTTPException: 500 if the batch call fails unexpectedly.
+        HTTPException: 500 if job creation or enqueueing fails.
     """
     try:
-        result = service.enrich_bulk(db=db, limit=request.limit)
-        return BulkEnrichResponse(**result)
+        job_id = str(uuid.uuid4())
+        job = Job(
+            id=job_id,
+            job_type="enrich_bulk",
+            status="queued",
+            total=request.limit,
+        )
+        db.add(job)
+        db.commit()
+
+        redis = await create_pool(get_redis_settings())
+        await redis.enqueue_job(
+            "enrich_bulk_task",
+            job_id=job_id,
+            limit=request.limit,
+        )
+        await redis.aclose()
+
+        return EnqueueResponse(
+            job_id=job_id,
+            status="queued",
+            message=(
+                f"Enrichment av upp till {request.limit} produkter köat. "
+                f"Följ progress på /api/v1/jobs/{job_id}"
+            ),
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Bulk enrichment misslyckades: {exc}",
+            detail=f"Kunde inte köa enrichment-jobb: {exc}",
         ) from exc
 
 

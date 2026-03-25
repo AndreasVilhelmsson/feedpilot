@@ -33,5 +33,21 @@ services:
     ports:
       - "6380:6379"
 
+  worker:
+    container_name: worker
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    platform: linux/arm64
+    volumes:
+      - ./backend:/app
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - postgres
+      - redis
+    command: >
+      arq app.workers.settings.WorkerSettings
+
 volumes:
   postgres_data:

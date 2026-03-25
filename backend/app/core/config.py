@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     database_url: str = ""
+    redis_host: str = "redis"
+    redis_port: int = 6379
 
     model_config = SettingsConfigDict(
         env_file=".env",

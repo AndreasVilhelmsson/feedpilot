@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.ingestion.connectors.csv_connector import read_csv
+from app.ingestion.connectors.xlsx_connector import read_xlsx
 from app.ingestion.mapping.field_mapper import FieldMapper
 from app.ingestion.normalizer import normalize_row
 from app.ingestion.validators import validate_row
@@ -58,17 +59,25 @@ class IngestionService:
             quality_warnings=canonical.quality_warnings,
         )
 
-    def ingest_csv(
+    def _run_pipeline(
         self,
-        contents: bytes,
+        headers: list[str],
+        rows: list[dict[str, Any]],
         feed_source: str,
+        filename: str,
         db: Session,
     ) -> dict[str, Any]:
-        """Parse, map, normalize, validate and persist a CSV feed.
+        """Map, normalize, validate and persist a list of product rows.
+
+        Shared pipeline logic used by both ingest_csv() and ingest_xlsx().
+        Rows that raise ValueError during mapping are counted as skipped
+        and recorded with a high-severity warning.
 
         Args:
-            contents: Raw CSV file bytes.
-            feed_source: Name of the source system, e.g. 'shopify'.
+            headers: Column names from the source file.
+            rows: Raw row dicts to process.
+            feed_source: Source system name, e.g. 'shopify' or 'auto'.
+            filename: File type label for logging ('csv' or 'xlsx').
             db: Active database session.
 
         Returns:
@@ -76,12 +85,10 @@ class IngestionService:
                 total: Total rows processed.
                 created: New products created.
                 updated: Existing products updated.
-                skipped: Rows skipped due to missing SKU.
+                skipped: Rows skipped due to errors or missing SKU.
                 detected_source: Auto-detected source system.
-                warnings: List of data quality warnings.
+                warnings: List of data quality warnings per SKU.
         """
-        headers, rows = read_csv(contents)
-
         mapper = FieldMapper(
             source=feed_source if feed_source != "auto" else None
         )
@@ -144,6 +151,50 @@ class IngestionService:
             "detected_source": detected_source,
             "warnings": all_warnings,
         }
+
+    def ingest_csv(
+        self,
+        contents: bytes,
+        feed_source: str,
+        db: Session,
+    ) -> dict[str, Any]:
+        """Parse, map, normalize, validate and persist a CSV feed.
+
+        Args:
+            contents: Raw CSV file bytes.
+            feed_source: Name of the source system, e.g. 'shopify'.
+            db: Active database session.
+
+        Returns:
+            Ingestion statistics and quality warnings.
+
+        Raises:
+            ValueError: If the CSV has no headers or no rows.
+        """
+        headers, rows = read_csv(contents)
+        return self._run_pipeline(headers, rows, feed_source, "csv", db)
+
+    def ingest_xlsx(
+        self,
+        contents: bytes,
+        feed_source: str,
+        db: Session,
+    ) -> dict[str, Any]:
+        """Parse, map, normalize, validate and persist an Excel feed.
+
+        Args:
+            contents: Raw .xlsx file bytes.
+            feed_source: Name of the source system, e.g. 'shopify'.
+            db: Active database session.
+
+        Returns:
+            Ingestion statistics and quality warnings.
+
+        Raises:
+            ValueError: If the file has no headers or no rows.
+        """
+        headers, rows = read_xlsx(contents)
+        return self._run_pipeline(headers, rows, feed_source, "xlsx", db)
 
 
 def get_ingestion_service() -> IngestionService:

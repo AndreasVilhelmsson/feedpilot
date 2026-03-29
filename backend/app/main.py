@@ -1,6 +1,7 @@
 """FeedPilot API entry point."""
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.database import create_tables
 from app.api.health import router as health_router
@@ -12,6 +13,9 @@ from app.api.enrich import router as enrich_router
 from app.api.variants import router as variants_router
 from app.api.images import router as images_router
 from app.api.jobs import router as jobs_router
+from app.api.stats import router as stats_router
+from app.api.catalog import router as catalog_router
+from app.api.products import router as products_router
 
 settings = get_settings()
 
@@ -20,7 +24,16 @@ app = FastAPI(
     version=settings.app_version,
     debug=settings.debug,
 )
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.on_event("startup")
 async def startup() -> None:
@@ -37,6 +50,9 @@ app.include_router(enrich_router, prefix="/api/v1")
 app.include_router(variants_router, prefix="/api/v1")
 app.include_router(images_router, prefix="/api/v1")
 app.include_router(jobs_router, prefix="/api/v1")
+app.include_router(stats_router, prefix="/api/v1")
+app.include_router(catalog_router, prefix="/api/v1")
+app.include_router(products_router, prefix="/api/v1")
 
 
 @app.get("/")

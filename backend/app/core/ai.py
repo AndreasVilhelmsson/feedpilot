@@ -3,10 +3,14 @@
 Provides a factory function and a high-level wrapper
 for communicating with the Anthropic Claude API.
 """
+import time
 import json
 import re
 import anthropic
 from app.core.config import get_settings
+
+MAX_RETRIES = 4
+RETRY_DELAYS = [2, 5, 10, 20]  # sekunder mellan försök
 
 settings = get_settings()
 
@@ -57,7 +61,8 @@ def ask_claude(
             total_tokens: Sum of input and output tokens.
 
     Raises:
-        anthropic.APIError: If the API call fails.
+        anthropic.APIError: If the API call fails after all retries.
+        OverloadedError: If the API remains overloaded after MAX_RETRIES attempts.
     """
     client = get_client()
     kwargs: dict = {
@@ -68,15 +73,21 @@ def ask_claude(
     if system:
         kwargs["system"] = system
 
-    response = client.messages.create(**kwargs)
-    text = response.content[0].text
-
-    return {
-        "answer": text,
-        "input_tokens": response.usage.input_tokens,
-        "output_tokens": response.usage.output_tokens,
-        "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
-    }
+    for attempt, delay in enumerate(RETRY_DELAYS, 1):
+        try:
+            response = client.messages.create(**kwargs)
+            text = response.content[0].text
+            return {
+                "answer": text,
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+                "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
+            }
+        except anthropic.APIStatusError as e:
+            if e.status_code != 529 or attempt >= MAX_RETRIES:
+                raise
+            print(f"API överbelastad, försök {attempt}/{MAX_RETRIES}. Väntar {delay}s...")
+            time.sleep(delay)
 
 
 def ask_claude_vision(
@@ -107,7 +118,8 @@ def ask_claude_vision(
             total_tokens: Sum of input and output tokens.
 
     Raises:
-        anthropic.APIError: If the API call fails.
+        anthropic.APIError: If the API call fails after all retries.
+        OverloadedError: If the API remains overloaded after MAX_RETRIES attempts.
     """
     client = get_client()
 
@@ -131,12 +143,18 @@ def ask_claude_vision(
     if system:
         kwargs["system"] = system
 
-    response = client.messages.create(**kwargs)
-    text = response.content[0].text
-
-    return {
-        "answer": text,
-        "input_tokens": response.usage.input_tokens,
-        "output_tokens": response.usage.output_tokens,
-        "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
-    }
+    for attempt, delay in enumerate(RETRY_DELAYS, 1):
+        try:
+            response = client.messages.create(**kwargs)
+            text = response.content[0].text
+            return {
+                "answer": text,
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+                "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
+            }
+        except anthropic.APIStatusError as e:
+            if e.status_code != 529 or attempt >= MAX_RETRIES:
+                raise
+            print(f"API överbelastad, försök {attempt}/{MAX_RETRIES}. Väntar {delay}s...")
+            time.sleep(delay)

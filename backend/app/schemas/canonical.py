@@ -76,6 +76,9 @@ class CanonicalProduct(BaseModel):
     # Unknown fields from the supplier
     extra_attributes: dict[str, str] = {}
 
+    # Image
+    image_url: str | None = None
+
     # Raw data — always preserve original
     raw_data: dict[str, Any] = {}
 

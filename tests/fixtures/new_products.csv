@@ -1,0 +1,11 @@
+sku_id,title,description,brand,category,price,color,material,size,gender
+JACKET-001,Slim Fit Wool Blazer,,Hugo Boss,Jackets,2499.00,Navy,Wool,M,Male
+JACKET-002,Oversized Teddy Coat,,Acne Studios,Jackets,3299.00,Camel,Polyester,L,Female
+SHOE-101,Classic White Leather Sneaker,,Common Projects,Shoes,2899.00,White,Leather,42,Unisex
+SHOE-102,Chelsea Boot,,Dr. Martens,Shoes,1499.00,Black,Leather,40,Female
+SHOE-103,Running Shoe Pro,,Nike,Shoes,1199.00,Red,,43,Male
+ACC-001,Leather Card Holder,,A.P.C.,Accessories,699.00,Black,Full-grain leather,,Unisex
+ACC-002,Silk Scarf,,Totême,Accessories,1299.00,Ivory,100% Silk,,Female
+DENIM-001,Slim Taper Jean,,Levi's,Denim,899.00,Indigo Blue,Denim,32/32,Male
+DENIM-002,Wide Leg Jean,,Weekday,Denim,599.00,Light wash,Cotton denim,27/30,Female
+KNIT-001,Merino Turtleneck,,Arket,Knitwear,999.00,Forest Green,Merino Wool,S,Unisex

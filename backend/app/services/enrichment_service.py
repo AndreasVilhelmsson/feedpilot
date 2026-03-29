@@ -10,7 +10,6 @@ Orchestrates the full enrichment pipeline:
 """
 
 import json
-import re
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -34,19 +33,38 @@ MAX_TOKENS_BY_PRIORITY: dict[str, int] = {
 }
 
 
-def _strip_markdown(text: str) -> str:
-    """Strip markdown code fences if the model returns them.
+def _extract_json(text: str) -> dict:
+    """Extract JSON from Claude response, handling markdown code blocks.
+
+    Handles three cases:
+    1. Plain JSON object with no surrounding text.
+    2. JSON wrapped in markdown code fences (```json ... ``` or ``` ... ```).
+    3. JSON embedded in explanatory prose — extracted via brace scanning.
 
     Args:
-        text: Raw model output.
+        text: Raw model output from ask_claude().
 
     Returns:
-        Clean JSON string without markdown wrapping.
+        Parsed JSON as a dict.
+
+    Raises:
+        json.JSONDecodeError: If no valid JSON object can be extracted.
+        RuntimeError: If no JSON object delimiters are found at all.
     """
     text = text.strip()
-    text = re.sub(r"^```(?:json)?\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
-    return text.strip()
+    if text.startswith("```"):
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        if start != -1 and end > start:
+            text = text[start:end]
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        if start != -1 and end > start:
+            return json.loads(text[start:end])
+        raise
 
 
 def _build_user_message(
@@ -188,13 +206,11 @@ class EnrichmentService:
         )
 
         raw_text = ai_response["answer"]
-        start = raw_text.find("{")
-        end = raw_text.rfind("}") + 1
-        if start == -1 or end == 0:
+        if not raw_text or "{" not in raw_text:
             raise RuntimeError(
                 f"Claude returnerade inget JSON-objekt. Svar: {raw_text[:200]!r}"
             )
-        parsed: dict = json.loads(raw_text[start:end])
+        parsed: dict = _extract_json(raw_text)
 
         analysis = AnalysisResult(
             product_id=product.id,
@@ -243,7 +259,7 @@ class EnrichmentService:
         Returns:
             Dict with keys 'processed', 'results' and 'errors'.
         """
-        products = self._repo.get_all(db, limit=limit)
+        products = self._repo.get_unenriched(db, limit=limit)
         results: list[dict] = []
         errors: list[dict] = []
 

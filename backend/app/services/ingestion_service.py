@@ -6,6 +6,7 @@ connector → mapping → normalization → validation → persistence.
 
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.ingestion.connectors.csv_connector import read_csv
@@ -97,51 +98,61 @@ class IngestionService:
         created = updated = skipped = 0
         all_warnings: list[dict] = []
 
-        for row in rows:
-            try:
-                canonical: CanonicalProduct = mapper.transform_row(row)
-            except ValueError as exc:
-                skipped += 1
-                all_warnings.append({
-                    "sku_id": "UNKNOWN",
-                    "warnings": [{
-                        "field": "sku_id",
-                        "severity": "high",
-                        "message": str(exc),
-                    }],
-                })
-                continue
+        # no_autoflush: prevents SQLAlchemy from flushing pending INSERTs when
+        # filter_by() runs the SELECT inside the loop. Without this, a pending
+        # db.add() for an earlier row would be flushed before the SELECT,
+        # triggering a unique-constraint IntegrityError if the SKU already
+        # exists in the DB — causing the session to abort and the endpoint to hang.
+        with db.no_autoflush:
+            for row in rows:
+                try:
+                    canonical: CanonicalProduct = mapper.transform_row(row)
+                except ValueError as exc:
+                    skipped += 1
+                    all_warnings.append({
+                        "sku_id": "UNKNOWN",
+                        "warnings": [{
+                            "field": "sku_id",
+                            "severity": "high",
+                            "message": str(exc),
+                        }],
+                    })
+                    continue
 
-            canonical.feed_source = feed_source
-            canonical = normalize_row(canonical)
-            canonical = validate_row(canonical)
+                canonical.feed_source = feed_source
+                canonical = normalize_row(canonical)
+                canonical = validate_row(canonical)
 
-            if canonical.quality_warnings:
-                all_warnings.append({
-                    "sku_id": canonical.sku_id,
-                    "warnings": canonical.quality_warnings,
-                })
+                if canonical.quality_warnings:
+                    all_warnings.append({
+                        "sku_id": canonical.sku_id,
+                        "warnings": canonical.quality_warnings,
+                    })
 
-            existing = (
-                db.query(Product)
-                .filter_by(sku_id=canonical.sku_id)
-                .first()
-            )
+                existing = (
+                    db.query(Product)
+                    .filter_by(sku_id=canonical.sku_id)
+                    .first()
+                )
 
-            if existing:
-                product = self._canonical_to_model(canonical)
-                for field in (
-                    "title", "description", "category", "price",
-                    "attributes", "raw_data", "feed_source",
-                    "detected_source", "quality_warnings",
-                ):
-                    setattr(existing, field, getattr(product, field))
-                updated += 1
-            else:
-                db.add(self._canonical_to_model(canonical))
-                created += 1
+                if existing:
+                    product = self._canonical_to_model(canonical)
+                    for field in (
+                        "title", "description", "category", "price",
+                        "attributes", "raw_data", "feed_source",
+                        "detected_source", "quality_warnings",
+                    ):
+                        setattr(existing, field, getattr(product, field))
+                    updated += 1
+                else:
+                    db.add(self._canonical_to_model(canonical))
+                    created += 1
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise
 
         return {
             "total": len(rows),

@@ -41,6 +41,34 @@ class ProductRepository:
         """
         return db.query(Product).limit(limit).all()
 
+    def get_unenriched(
+        self,
+        db: Session,
+        limit: int = 100,
+    ) -> list[Product]:
+        """Return products that have no AnalysisResult yet.
+
+        Uses a subquery to exclude any product that already has at least
+        one row in analysis_results, so re-running bulk enrichment never
+        processes the same product twice.
+
+        Args:
+            db: Active database session.
+            limit: Maximum number of products to return.
+
+        Returns:
+            List of Product instances with no prior enrichment.
+        """
+        from app.models.analysis_result import AnalysisResult
+
+        enriched_ids = db.query(AnalysisResult.product_id).distinct()
+        return (
+            db.query(Product)
+            .filter(Product.id.notin_(enriched_ids))
+            .limit(limit)
+            .all()
+        )
+
     def semantic_search(
         self,
         query: str,

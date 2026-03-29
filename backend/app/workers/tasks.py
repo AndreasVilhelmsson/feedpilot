@@ -42,7 +42,7 @@ async def enrich_bulk_task(
 
         from app.repositories.product_repository import ProductRepository
         repo = ProductRepository()
-        products = repo.get_all(db, limit=limit)
+        products = repo.get_unenriched(db, limit=limit)
 
         job.total = len(products)
         db.commit()

@@ -41,6 +41,7 @@ class Product(Base):
     feed_source: str = Column(String(100), nullable=True)
     detected_source: str = Column(String(100), nullable=True)
     quality_warnings: list = Column(JSON, nullable=True)
+    image_url: str = Column(String(2048), nullable=True)
     created_at: datetime = Column(
         DateTime, default=datetime.utcnow
     )

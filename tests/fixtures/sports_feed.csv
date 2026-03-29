@@ -1,0 +1,6 @@
+sku_id,title,description,brand,category,price,color,material,size,gender
+SPORT-001,Pro Running Jacket,,Nike,Sportswear,1299.00,Black,,M,Male
+SPORT-002,Yoga Leggings,,Lululemon,Sportswear,899.00,Navy,,S,Female
+SPORT-003,Training Shorts,,Adidas,Sportswear,499.00,Grey,,L,Male
+SPORT-004,Sports Bra,,Gymshark,Sportswear,399.00,Pink,,XS,Female
+SPORT-005,Compression Socks,,2XU,Sportswear,299.00,Black,,M,Unisex

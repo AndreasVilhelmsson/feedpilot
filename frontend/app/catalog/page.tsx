@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { api } from "@/lib/api"
 import type { CatalogProduct, CatalogResponse } from "@/lib/types"
-import { SkeletonCard } from "@/components/ui/SkeletonCard"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -113,6 +112,8 @@ export default function CatalogPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("")
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [enrichingSkus, setEnrichingSkus] = useState<Set<string>>(new Set())
+  const [enrichAllRunning, setEnrichAllRunning] = useState(false)
 
   // Debounce search input 300ms
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -165,6 +166,30 @@ export default function CatalogPage() {
     })
   }
 
+  async function handleEnrichSingle(skuId: string) {
+    setEnrichingSkus((prev) => new Set(prev).add(skuId))
+    try {
+      await api.post(`/api/v1/products/${skuId}/enrich`)
+      await fetchProducts()
+    } finally {
+      setEnrichingSkus((prev) => {
+        const next = new Set(prev)
+        next.delete(skuId)
+        return next
+      })
+    }
+  }
+
+  async function handleEnrichAll() {
+    setEnrichAllRunning(true)
+    try {
+      await api.post("/api/v1/enrich/bulk", { limit: 50 })
+      await fetchProducts()
+    } finally {
+      setEnrichAllRunning(false)
+    }
+  }
+
   function toggleSelectAll() {
     if (selected.size === products.length) {
       setSelected(new Set())
@@ -205,11 +230,17 @@ export default function CatalogPage() {
               />
             </div>
             {/* Enrich all */}
-            <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl bg-primary text-white hover:bg-primary-container transition-colors">
-              <span className="material-symbols-outlined text-[16px]">
-                auto_awesome
-              </span>
-              Enrich all
+            <button
+              onClick={handleEnrichAll}
+              disabled={enrichAllRunning}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl bg-primary text-white hover:bg-primary-container transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {enrichAllRunning ? (
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
+              )}
+              {enrichAllRunning ? "Enriching…" : "Enrich all"}
             </button>
           </div>
         </div>
@@ -332,17 +363,27 @@ export default function CatalogPage() {
                       className="px-4 py-3"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <button
-                        onClick={() =>
-                          router.push(`/products/${product.sku_id}`)
-                        }
-                        className="text-xs font-medium text-primary hover:underline flex items-center gap-1"
-                      >
-                        View details
-                        <span className="material-symbols-outlined text-[14px]">
-                          arrow_forward
-                        </span>
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleEnrichSingle(product.sku_id)}
+                          disabled={enrichingSkus.has(product.sku_id)}
+                          className="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {enrichingSkus.has(product.sku_id) ? (
+                            <span className="w-3 h-3 border-[1.5px] border-primary border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <span className="material-symbols-outlined text-[13px]">auto_awesome</span>
+                          )}
+                          Enrich
+                        </button>
+                        <button
+                          onClick={() => router.push(`/products/${product.sku_id}`)}
+                          className="text-xs font-medium text-on-surface-variant hover:text-on-surface flex items-center gap-0.5 transition-colors"
+                        >
+                          View
+                          <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

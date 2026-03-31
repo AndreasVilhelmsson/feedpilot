@@ -544,6 +544,7 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true)
   const [enriching, setEnriching] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [enrichError, setEnrichError] = useState<string | null>(null)
   const [decisions, setDecisions] = useState<Record<string, boolean | null>>({})
   const [editedValues, setEditedValues] = useState<Record<string, string>>({})
   const [editingField, setEditingField] = useState<string | null>(null)
@@ -574,11 +575,13 @@ export default function ProductDetailPage() {
 
   async function handleEnrich() {
     setEnriching(true)
+    setEnrichError(null)
     try {
       await api.post<EnrichResponse>(`/api/v1/products/${skuId}/enrich`)
       await fetchProduct()
     } catch {
-      setError("Enrichment misslyckades. Försök igen.")
+      setEnrichError("Enrichment misslyckades. Försök igen.")
+    } finally {
       setEnriching(false)
     }
   }
@@ -699,6 +702,21 @@ export default function ProductDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Enrich error banner */}
+      {enrichError && (
+        <div className="mx-8 mt-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-error-container text-on-error-container text-sm">
+          <span className="material-symbols-outlined text-[18px] shrink-0">error</span>
+          <span className="flex-1">{enrichError}</span>
+          <button
+            type="button"
+            onClick={() => setEnrichError(null)}
+            className="material-symbols-outlined text-[18px] hover:opacity-70 transition-opacity"
+          >
+            close
+          </button>
+        </div>
+      )}
 
       {/* Content */}
       <div className="px-8 py-6">

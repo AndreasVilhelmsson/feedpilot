@@ -2,34 +2,11 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { api } from "@/lib/api"
-import type { StatsResponse, JobResponse, BulkEnrichResponse } from "@/lib/types"
+import type { StatsResponse, JobResponse, BulkEnrichResponse, CatalogProduct, CatalogResponse } from "@/lib/types"
 import { SkeletonCard } from "@/components/ui/SkeletonCard"
 import { UploadModal } from "@/components/ui/UploadModal"
 
-// ── Static chart/activity data ───────────────────────────────────────────────
-
-const confidenceTrend = [62, 65, 68, 71, 69, 74, 78, 76, 81, 83, 85, 84]
-const trendLabels = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-]
-
-const categoryScores = [
-  { name: "Electronics", score: 87, count: 423 },
-  { name: "Clothing", score: 72, count: 891 },
-  { name: "Home & Garden", score: 65, count: 312 },
-  { name: "Sports", score: 58, count: 187 },
-  { name: "Beauty", score: 44, count: 234 },
-]
-
-const recentActivity = [
-  { sku: "SKU-4821", title: "Wireless Noise-Cancelling Headphones", score: 94, time: "2 min ago", status: "success" },
-  { sku: "SKU-3307", title: "Organic Cotton T-Shirt", score: 61, time: "8 min ago", status: "warning" },
-  { sku: "SKU-9102", title: "Running Shoes Pro X", score: 38, time: "15 min ago", status: "error" },
-  { sku: "SKU-2244", title: "Kitchen Knife Set", score: 88, time: "23 min ago", status: "success" },
-  { sku: "SKU-5519", title: "Yoga Mat Premium", score: 79, time: "31 min ago", status: "success" },
-  { sku: "SKU-7731", title: "LED Desk Lamp", score: 55, time: "45 min ago", status: "warning" },
-]
+// ── Helpers ── (chart data removed until backend aggregation endpoints exist)
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -60,23 +37,23 @@ function enrichButtonLabel(status: BulkStatus, progress: number): string {
   return "Enrich all"
 }
 
-// ── Chart ─────────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function TrendBars() {
-  const max = Math.max(...confidenceTrend)
-  return (
-    <div className="flex items-end gap-1 h-20">
-      {confidenceTrend.map((v, i) => (
-        <div key={i} className="flex-1 flex flex-col items-center gap-1">
-          <div
-            className="w-full rounded-lg bg-primary opacity-80"
-            style={{ height: `${(v / max) * 80}px` }}
-          />
-          <span className="text-[9px] text-on-surface-variant">{trendLabels[i]}</span>
-        </div>
-      ))}
-    </div>
-  )
+function relativeTime(iso: string | null): string {
+  if (!iso) return "—"
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 1) return "nyss"
+  if (mins < 60) return `${mins} min sedan`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours} h sedan`
+  return `${Math.floor(hours / 24)} d sedan`
+}
+
+function productStatusKey(status: string): "success" | "warning" | "error" {
+  if (status === "enriched") return "success"
+  if (status === "return_risk") return "error"
+  return "warning"
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -146,75 +123,46 @@ function FeedQualityScore() {
   )
 }
 
-function ConfidenceTrend() {
-  return (
-    <div className="bg-surface-container-lowest rounded-xl border border-outline-variant p-5">
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-sm font-semibold text-on-surface">AI Confidence Trend</p>
-        <span className="text-xs text-on-surface-variant">Last 12 months</span>
-      </div>
-      <TrendBars />
-      <div className="mt-3 flex items-center gap-2">
-        <span className="text-2xl font-headline font-bold text-primary">84%</span>
-        <span className="text-xs text-[#1a7f4b] font-medium">↑ +3.2% vs last month</span>
-      </div>
-    </div>
-  )
-}
-
-function EnrichmentByCategory() {
-  return (
-    <div className="bg-surface-container-lowest rounded-xl border border-outline-variant p-5">
-      <p className="text-sm font-semibold text-on-surface mb-4">Enrichment by Category</p>
-      <div className="space-y-3">
-        {categoryScores.map(({ name, score, count }) => (
-          <div key={name}>
-            <div className="flex justify-between text-xs mb-1">
-              <span className="text-on-surface">{name}</span>
-              <div className="flex items-center gap-3">
-                <span className="text-on-surface-variant">{count} SKUs</span>
-                <span className={`font-semibold w-7 text-right ${scoreColor(score)}`}>{score}</span>
-              </div>
-            </div>
-            <div className="h-2 bg-surface-container-high rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full ${score >= 75 ? "bg-[#1a7f4b]" : score >= 50 ? "bg-tertiary-fixed-dim" : "bg-error"}`}
-                style={{ width: `${score}%` }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function RecentActivity() {
+function RecentActivity({ products, loading }: { products: CatalogProduct[]; loading: boolean }) {
   return (
     <div className="bg-surface-container-lowest rounded-xl border border-outline-variant p-5 h-full">
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm font-semibold text-on-surface">Recent Activity</p>
-        <button className="text-xs text-primary font-medium hover:underline">View all</button>
       </div>
-      <div className="space-y-3">
-        {recentActivity.map((item) => (
-          <div key={item.sku} className="flex items-start gap-3 pb-3 border-b border-outline-variant last:border-0 last:pb-0">
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-on-surface truncate">{item.title}</p>
-              <p className="text-xs text-on-surface-variant mt-0.5">{item.sku}</p>
-            </div>
-            <div className="flex flex-col items-end gap-1 shrink-0">
-              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${statusBadge(item.status)}`}>
-                {statusLabel(item.status)}
-              </span>
-              <div className="flex items-center gap-1.5">
-                <span className={`text-xs font-bold ${scoreColor(item.score)}`}>{item.score}</span>
-                <span className="text-[10px] text-on-surface-variant">{item.time}</span>
+      {loading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-10 rounded-lg bg-surface-container animate-pulse" />
+          ))}
+        </div>
+      ) : products.length === 0 ? (
+        <p className="text-sm text-on-surface-variant text-center py-8">Inga produkter ännu</p>
+      ) : (
+        <div className="space-y-3">
+          {products.map((p) => {
+            const key = productStatusKey(p.status)
+            return (
+              <div key={p.sku_id} className="flex items-start gap-3 pb-3 border-b border-outline-variant last:border-0 last:pb-0">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-on-surface truncate">{p.title ?? "—"}</p>
+                  <p className="text-xs text-on-surface-variant mt-0.5">{p.sku_id}</p>
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${statusBadge(key)}`}>
+                    {statusLabel(key)}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {p.overall_score != null && (
+                      <span className={`text-xs font-bold ${scoreColor(p.overall_score)}`}>{p.overall_score}</span>
+                    )}
+                    <span className="text-[10px] text-on-surface-variant">{relativeTime(p.enriched_at)}</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        ))}
-      </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -234,6 +182,10 @@ export default function DashboardPage() {
   const [statsLoading, setStatsLoading] = useState(true)
   const [statsError, setStatsError] = useState(false)
 
+  // Recent activity
+  const [recentProducts, setRecentProducts] = useState<CatalogProduct[]>([])
+  const [activityLoading, setActivityLoading] = useState(true)
+
   // Upload
   const [showUpload, setShowUpload] = useState(false)
 
@@ -241,6 +193,21 @@ export default function DashboardPage() {
   const [bulkJobId, setBulkJobId] = useState<string | null>(null)
   const [bulkProgress, setBulkProgress] = useState(0)
   const [bulkStatus, setBulkStatus] = useState<BulkStatus>("idle")
+
+  // ── Recent activity fetcher ───────────────────────────────────────────────
+  const fetchRecentActivity = useCallback(async () => {
+    setActivityLoading(true)
+    try {
+      const { data } = await api.get<CatalogResponse>("/api/v1/catalog", {
+        params: { page_size: 6 },
+      })
+      setRecentProducts(data.products)
+    } catch {
+      // non-critical — silent fail
+    } finally {
+      setActivityLoading(false)
+    }
+  }, [])
 
   // ── STEG 6: fetchStats helper ──────────────────────────────────────────────
   const fetchStats = useCallback(async () => {
@@ -263,10 +230,11 @@ export default function DashboardPage() {
       .catch(() => setHealthOnline(false))
   }, [])
 
-  // ── STEG 3: Stats on mount ────────────────────────────────────────────────
+  // ── STEG 3: Stats + activity on mount ────────────────────────────────────
   useEffect(() => {
     fetchStats()
-  }, [fetchStats])
+    fetchRecentActivity()
+  }, [fetchStats, fetchRecentActivity])
 
   // ── STEG 5: Bulk job polling ──────────────────────────────────────────────
   useEffect(() => {
@@ -442,13 +410,12 @@ export default function DashboardPage() {
 
         {/* Main grid */}
         <div className="grid grid-cols-12 gap-4">
-          <div className="col-span-8 space-y-4">
+          <div className="col-span-8">
             <FeedQualityScore />
-            <ConfidenceTrend />
-            <EnrichmentByCategory />
+            {/* ConfidenceTrend + EnrichmentByCategory hidden — awaiting backend aggregation endpoints */}
           </div>
           <div className="col-span-4">
-            <RecentActivity />
+            <RecentActivity products={recentProducts} loading={activityLoading} />
           </div>
         </div>
       </div>

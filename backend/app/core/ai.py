@@ -76,6 +76,12 @@ def ask_claude(
     for attempt, delay in enumerate(RETRY_DELAYS, 1):
         try:
             response = client.messages.create(**kwargs)
+            if response.stop_reason == "max_tokens":
+                raise RuntimeError(
+                    f"Claude svarade med stop_reason='max_tokens' — svaret trunkerades. "
+                    f"Öka max_tokens (nuvarande: {max_tokens}). "
+                    f"Output-tokens: {response.usage.output_tokens}."
+                )
             text = response.content[0].text
             return {
                 "answer": text,

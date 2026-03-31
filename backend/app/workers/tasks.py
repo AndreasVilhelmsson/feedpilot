@@ -58,9 +58,13 @@ async def enrich_bulk_task(
                 result = service.enrich_product(product.sku_id, db)
                 results.append(result)
                 job.processed += 1
+                print(f"[enrich] ✓ {product.sku_id}")
             except Exception as exc:
-                errors.append({"sku_id": product.sku_id, "error": str(exc)})
+                error_msg = str(exc)
+                errors.append({"sku_id": product.sku_id, "error": error_msg})
                 job.failed += 1
+                print(f"[enrich] ✗ {product.sku_id} — {type(exc).__name__}: {error_msg}")
+            job.result = {"processed": len(results), "errors": errors}
             db.commit()
 
         job.status = "completed"

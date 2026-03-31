@@ -27,21 +27,34 @@ class StatsRepository:
         return db.query(func.count(Product.id)).scalar() or 0
 
     def get_enriched_count(self, db: Session) -> int:
-        """Return the number of products with at least one successful analysis.
+        """Return the number of products whose latest analysis is 'enriched'.
 
-        A successful analysis is defined as an AnalysisResult row where
-        overall_score IS NOT NULL.
+        Mirrors the catalog definition exactly: uses the most recent
+        AnalysisResult per product, requires overall_score IS NOT NULL,
+        and excludes return_risk='high' (those are counted separately).
 
         Args:
             db: Active database session.
 
         Returns:
-            Count of distinct product_id values in analysis_results
-            where overall_score is not null.
+            Count of products with a successful latest analysis that is
+            not flagged as high return risk.
         """
+        latest_subq = (
+            db.query(
+                AnalysisResult.product_id,
+                func.max(AnalysisResult.id).label("latest_id"),
+            )
+            .group_by(AnalysisResult.product_id)
+            .subquery()
+        )
         return (
-            db.query(func.count(func.distinct(AnalysisResult.product_id)))
-            .filter(AnalysisResult.overall_score.isnot(None))
+            db.query(func.count(AnalysisResult.product_id))
+            .join(latest_subq, AnalysisResult.id == latest_subq.c.latest_id)
+            .filter(
+                AnalysisResult.overall_score.isnot(None),
+                AnalysisResult.return_risk != "high",
+            )
             .scalar()
             or 0
         )

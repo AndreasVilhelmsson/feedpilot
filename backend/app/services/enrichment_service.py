@@ -10,6 +10,7 @@ Orchestrates the full enrichment pipeline:
 """
 
 import json
+import re
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -24,22 +25,28 @@ from app.schemas.canonical import CanonicalProduct
 PROMPT_NAME: str = "enrichment_v2"
 RAG_CONTEXT_LIMIT: int = 3
 
-# Max tokens per enrichment priority level
+# Max tokens per enrichment priority level.
+# A full enrichment response (enriched_fields + issues + action_items) is
+# typically 500-2000 tokens. Set a safe floor of 4096 for all priorities so
+# the JSON is never truncated mid-object.
 MAX_TOKENS_BY_PRIORITY: dict[str, int] = {
     "critical": 4096,
-    "high": 2048,
-    "medium": 1024,
-    "low": 512,
+    "high": 4096,
+    "medium": 4096,
+    "low": 4096,
 }
 
 
 def _extract_json(text: str) -> dict:
-    """Extract JSON from Claude response, handling markdown code blocks.
+    """Extract JSON from Claude response, handling markdown and truncation.
 
-    Handles three cases:
-    1. Plain JSON object with no surrounding text.
-    2. JSON wrapped in markdown code fences (```json ... ``` or ``` ... ```).
-    3. JSON embedded in explanatory prose — extracted via brace scanning.
+    Strategy:
+    1. Strip markdown code fences if present.
+    2. Try a direct json.loads() — covers the happy path.
+    3. Use brace-depth scanning to locate the outermost complete {...} block,
+       which is robust against leading/trailing prose.
+    4. If no closing brace is found the response was truncated — raise a
+       descriptive ValueError so the caller can log the exact cause.
 
     Args:
         text: Raw model output from ask_claude().
@@ -48,23 +55,70 @@ def _extract_json(text: str) -> dict:
         Parsed JSON as a dict.
 
     Raises:
-        json.JSONDecodeError: If no valid JSON object can be extracted.
-        RuntimeError: If no JSON object delimiters are found at all.
+        ValueError: If the response is truncated or contains no JSON object.
     """
     text = text.strip()
+
+    # Strip markdown code fences (```json ... ``` or ``` ... ```)
     if text.startswith("```"):
-        start = text.find("{")
-        end = text.rfind("}") + 1
-        if start != -1 and end > start:
-            text = text[start:end]
+        stripped = re.sub(r"^```(?:json)?\s*", "", text)
+        stripped = re.sub(r"\s*```$", "", stripped).strip()
+        if stripped:
+            text = stripped
+
+    # 1. Direct parse (fast path)
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}") + 1
-        if start != -1 and end > start:
-            return json.loads(text[start:end])
-        raise
+        pass
+
+    # 2. Brace-depth scan — find the outermost complete {...} block
+    start = text.find("{")
+    if start == -1:
+        raise ValueError(
+            f"Inget JSON-objekt hittades i Claude-svaret. "
+            f"Svar ({len(text)} tecken): {text[:200]!r}"
+        )
+
+    depth = 0
+    in_str = False
+    esc = False
+    end = -1
+
+    for i, ch in enumerate(text[start:], start):
+        if esc:
+            esc = False
+            continue
+        if ch == "\\":
+            esc = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                break
+
+    if end == -1:
+        raise ValueError(
+            f"JSON trunkerat — inget avslutande '}}' hittades "
+            f"(stop_reason=max_tokens?). "
+            f"Svar ({len(text)} tecken): {text[:200]!r}"
+        )
+
+    try:
+        return json.loads(text[start:end])
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"JSON-parsfel trots komplett block: {exc}. "
+            f"Block ({end - start} tecken): {text[start:start + 200]!r}"
+        ) from exc
 
 
 def _build_user_message(

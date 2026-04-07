@@ -272,7 +272,6 @@ function ImagePanel({
         const res = await api.post<ImageAnalysisResult>(
           `/api/v1/images/analyze-upload/${skuId}`,
           form,
-          { headers: { "Content-Type": "multipart/form-data" } },
         )
         data = res.data
         setPendingFile(null)
@@ -543,6 +542,8 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<ProductDetailResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [enriching, setEnriching] = useState(false)
+  const [applying, setApplying] = useState(false)
+  const [applyError, setApplyError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [enrichError, setEnrichError] = useState<string | null>(null)
   const [decisions, setDecisions] = useState<Record<string, boolean | null>>({})
@@ -640,14 +641,24 @@ export default function ProductDetailPage() {
     URL.revokeObjectURL(url)
   }
 
-  function sendToPIM() {
+  async function applyAndReEnrich() {
     if (!product) return
-    const acceptedFields: Record<string, string> = {}
+    const fields: Record<string, string> = {}
     product.enriched_fields.forEach((f) => {
       if (decisions[f.field] === true)
-        acceptedFields[f.field] = editedValues[f.field] ?? f.suggested_value
+        fields[f.field] = editedValues[f.field] ?? f.suggested_value
     })
-    console.log("Send to PIM:", { sku_id: product.sku_id, fields: acceptedFields })
+    setApplying(true)
+    setApplyError(null)
+    try {
+      await api.patch(`/api/v1/products/${skuId}/fields`, { fields })
+      await api.post<EnrichResponse>(`/api/v1/products/${skuId}/enrich`)
+      await fetchProduct()
+    } catch {
+      setApplyError("Kunde inte spara ändringarna. Försök igen.")
+    } finally {
+      setApplying(false)
+    }
   }
 
   const acceptedCount = Object.values(decisions).filter((v) => v === true).length
@@ -767,16 +778,28 @@ export default function ProductDetailPage() {
                         Export JSON
                       </button>
                       <button
-                        onClick={sendToPIM}
-                        disabled={acceptedCount === 0}
+                        onClick={applyAndReEnrich}
+                        disabled={acceptedCount === 0 || applying}
                         className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-xl bg-primary text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary-container transition-colors"
                       >
-                        <span className="material-symbols-outlined text-[16px]">upload_file</span>
-                        Send to PIM
+                        {applying ? (
+                          <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                        ) : (
+                          <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
+                        )}
+                        {applying ? 'Applying…' : 'Apply & Re-enrich'}
                       </button>
                     </div>
                   )}
                 </div>
+
+                {applyError && (
+                  <div role="alert" className="flex items-center gap-2 mx-5 mt-3 px-4 py-2.5 rounded-xl bg-error-container text-on-error-container text-sm">
+                    <span className="material-symbols-outlined text-[16px]">error</span>
+                    <span className="flex-1">{applyError}</span>
+                    <button onClick={() => setApplyError(null)} className="material-symbols-outlined text-[16px] opacity-70 hover:opacity-100">close</button>
+                  </div>
+                )}
 
                 {!hasEnrichments ? (
                   <div className="flex flex-col items-center justify-center py-16">

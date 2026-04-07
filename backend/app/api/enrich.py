@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.job import Job
+from app.repositories.product_repository import ProductRepository
 from app.schemas.enrich import (
     BulkEnrichRequest,
     EnrichResponse,
@@ -65,12 +66,27 @@ async def enrich_bulk(
         HTTPException: 500 if job creation or enqueueing fails.
     """
     try:
+        repo = ProductRepository()
+        candidate_count = len(repo.get_unenriched(db, limit=request.limit))
+        print(
+            f"[enrich_bulk] pre-flight: limit={request.limit} "
+            f"candidates={candidate_count}"
+        )
+        if candidate_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "Inga produkter att enricha. "
+                    "Alla produkter är redan enrichade med status 'enriched'."
+                ),
+            )
+
         job_id = str(uuid.uuid4())
         job = Job(
             id=job_id,
             job_type="enrich_bulk",
             status="queued",
-            total=request.limit,
+            total=candidate_count,
         )
         db.add(job)
         db.commit()
@@ -87,10 +103,12 @@ async def enrich_bulk(
             job_id=job_id,
             status="queued",
             message=(
-                f"Enrichment av upp till {request.limit} produkter köat. "
+                f"Enrichment av {candidate_count} produkter köat. "
                 f"Följ progress på /api/v1/jobs/{job_id}"
             ),
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

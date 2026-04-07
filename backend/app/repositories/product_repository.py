@@ -5,7 +5,7 @@ Separates data access from business logic.
 """
 
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import func, or_, text
 from app.models.product import Product
 from app.core.embeddings import create_embedding
 
@@ -46,28 +46,52 @@ class ProductRepository:
         db: Session,
         limit: int = 100,
     ) -> list[Product]:
-        """Return products that have no AnalysisResult yet.
+        """Return products that need enrichment.
 
-        Uses a subquery to exclude any product that already has at least
-        one row in analysis_results, so re-running bulk enrichment never
-        processes the same product twice.
+        Includes products that:
+        - have no AnalysisResult at all (status = needs_review), OR
+        - whose latest AnalysisResult has return_risk = 'high'
+          (status = return_risk — still needs attention).
+
+        Uses the same latest-AR join pattern as the catalog so the
+        definition of "unenriched" stays consistent across the app.
 
         Args:
             db: Active database session.
             limit: Maximum number of products to return.
 
         Returns:
-            List of Product instances with no prior enrichment.
+            List of Product instances that need (re-)enrichment.
         """
         from app.models.analysis_result import AnalysisResult
 
-        enriched_ids = db.query(AnalysisResult.product_id).distinct()
-        return (
+        latest_ar_sq = (
+            db.query(
+                AnalysisResult.product_id,
+                func.max(AnalysisResult.id).label("latest_id"),
+            )
+            .group_by(AnalysisResult.product_id)
+            .subquery()
+        )
+
+        found = (
             db.query(Product)
-            .filter(Product.id.notin_(enriched_ids))
+            .outerjoin(latest_ar_sq, Product.id == latest_ar_sq.c.product_id)
+            .outerjoin(AnalysisResult, AnalysisResult.id == latest_ar_sq.c.latest_id)
+            .filter(
+                or_(
+                    AnalysisResult.id.is_(None),
+                    AnalysisResult.return_risk == "high",
+                )
+            )
             .limit(limit)
             .all()
         )
+        print(
+            f"[get_unenriched] filter=needs_review+return_risk "
+            f"limit={limit} found={len(found)}"
+        )
+        return found
 
     def semantic_search(
         self,

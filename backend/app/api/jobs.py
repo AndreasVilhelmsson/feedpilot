@@ -4,7 +4,9 @@ Provides endpoints for querying the status of background
 worker jobs queued via the ARQ async pipeline.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -15,6 +17,21 @@ router = APIRouter(
     prefix="/jobs",
     tags=["jobs"],
 )
+
+
+@router.get(
+    "",
+    response_model=List[JobResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List background jobs",
+    description="Returns the most recent jobs ordered by creation time descending.",
+)
+def list_jobs(
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> List[JobResponse]:
+    jobs = db.query(Job).order_by(Job.created_at.desc()).limit(limit).all()
+    return [JobResponse.model_validate(j) for j in jobs]
 
 
 @router.get(

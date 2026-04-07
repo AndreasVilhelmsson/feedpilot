@@ -9,7 +9,6 @@ Orchestrates the image analysis pipeline:
   6. Parse and return a structured ImageAnalysisResponse
 """
 
-import base64
 import json
 
 import httpx
@@ -29,8 +28,29 @@ MAX_IMAGE_SIZE_MB = 5
 MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024
 
 ALLOWED_MEDIA_TYPES: frozenset[str] = frozenset(
-    {"image/jpeg", "image/png", "image/webp", "image/gif"}
+    {"image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"}
 )
+
+
+def _coerce_int(value: object, default: int) -> int:
+    """Best-effort integer conversion for model output."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_float(value: object, default: float) -> float:
+    """Best-effort float conversion for model output."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _clamp(value: int | float, lower: int | float, upper: int | float) -> int | float:
+    """Clamp a numeric value to a closed interval."""
+    return max(lower, min(upper, value))
 
 
 def _extract_json(text: str) -> dict:
@@ -104,21 +124,43 @@ def _parse_response(
     Returns:
         Populated ImageAnalysisResponse instance.
     """
-    enrichments = [
-        SuggestedEnrichment(**e)
-        for e in parsed.get("suggested_enrichments", [])
-    ]
+    raw_enrichments = parsed.get("suggested_enrichments") or []
+    if not isinstance(raw_enrichments, list):
+        raw_enrichments = []
+
+    enrichments = [SuggestedEnrichment(**e) for e in raw_enrichments if isinstance(e, dict)]
+
+    raw_quality_issues = parsed.get("quality_issues") or []
+    if not isinstance(raw_quality_issues, list):
+        raw_quality_issues = []
+    quality_issues = [str(issue) for issue in raw_quality_issues]
+
+    raw_detected_attributes = parsed.get("detected_attributes") or {}
+    if not isinstance(raw_detected_attributes, dict):
+        raw_detected_attributes = {}
+
+    image_quality_score = _clamp(
+        _coerce_int(parsed.get("image_quality_score", 0), 0),
+        0,
+        100,
+    )
+    overall_confidence = _clamp(
+        _coerce_float(parsed.get("overall_confidence", 0.0), 0.0),
+        0.0,
+        1.0,
+    )
 
     return ImageAnalysisResponse(
         sku_id=sku_id,
-        detected_attributes=parsed.get("detected_attributes", {}),
-        quality_issues=parsed.get("quality_issues", []),
+        detected_attributes=raw_detected_attributes,
+        quality_issues=quality_issues,
         suggested_enrichments=enrichments,
-        image_quality_score=parsed.get("image_quality_score", 0),
-        overall_confidence=parsed.get("overall_confidence", 0.0),
+        image_quality_score=image_quality_score,
+        overall_confidence=overall_confidence,
         reasoning=parsed.get("reasoning", ""),
         total_tokens=total_tokens,
     )
+
 
 
 class ImageAnalysisService:
@@ -228,16 +270,13 @@ class ImageAnalysisService:
         Returns:
             Populated ImageAnalysisResponse.
         """
-        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-
         product = self._repo.get_by_sku(sku_id, db)
 
         prompt = _build_image_prompt(product)
         system = get_prompt(PROMPT_NAME)
 
         ai_response = ask_claude_vision(
-            image_data=image_b64,
-            media_type=media_type,
+            image_data=image_bytes,
             prompt=prompt,
             system=system,
         )

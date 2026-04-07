@@ -54,6 +54,23 @@ class ProductDetailResponse(BaseModel):
     image_url: str | None
 
 
+class ApplyFieldsRequest(BaseModel):
+    """Accepted enrichment fields to write back to the product.
+
+    Top-level product columns (title, description, category) are written
+    directly. All other keys are merged into the product's attributes JSON.
+    """
+
+    fields: dict[str, str]
+
+
+class ApplyFieldsResponse(BaseModel):
+    """Confirmation that enrichment fields were applied to the product."""
+
+    sku_id: str
+    updated_fields: list[str]
+
+
 class ImageUrlRequest(BaseModel):
     """Request body for saving a product image URL."""
 

@@ -13,6 +13,8 @@ from app.core.database import get_db
 from app.models.analysis_result import AnalysisResult
 from app.models.product import Product
 from app.schemas.product_detail import (
+    ApplyFieldsRequest,
+    ApplyFieldsResponse,
     EnrichmentDetail,
     EnrichResponse,
     ImageUrlRequest,
@@ -138,6 +140,43 @@ def enrich_product(
         enrichment_priority=result.get("enrichment_priority", "medium"),
         total_tokens=result.get("total_tokens"),
     )
+
+
+@router.patch(
+    "/{sku_id}/fields",
+    response_model=ApplyFieldsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Tillämpa godkända AI-förslag på produkt",
+    description=(
+        "Skriver tillbaka godkända enrichment-fält till produkten. "
+        "Kända kolumner (title, description, category) uppdateras direkt. "
+        "Övriga nycklar mergas in i attributes-kolumnen."
+    ),
+)
+def apply_fields(
+    sku_id: str,
+    body: ApplyFieldsRequest,
+    db: Session = Depends(get_db),
+) -> ApplyFieldsResponse:
+    """Write accepted enrichment suggestions back to the product row."""
+    product = _get_product_or_404(sku_id, db)
+
+    _COLUMN_FIELDS = {"title", "description", "category"}
+    attrs: dict = dict(product.attributes or {})
+    updated: list[str] = []
+
+    for field, value in body.fields.items():
+        if field in _COLUMN_FIELDS:
+            setattr(product, field, value)
+        else:
+            attrs[field] = value
+        updated.append(field)
+
+    if any(f not in _COLUMN_FIELDS for f in body.fields):
+        product.attributes = attrs
+
+    db.commit()
+    return ApplyFieldsResponse(sku_id=sku_id, updated_fields=updated)
 
 
 @router.patch(

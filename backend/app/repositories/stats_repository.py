@@ -27,18 +27,17 @@ class StatsRepository:
         return db.query(func.count(Product.id)).scalar() or 0
 
     def get_enriched_count(self, db: Session) -> int:
-        """Return the number of products whose latest analysis is 'enriched'.
+        """Return the number of products that have been through AI enrichment.
 
-        Mirrors the catalog definition exactly: uses the most recent
-        AnalysisResult per product, requires overall_score IS NOT NULL,
-        and excludes return_risk='high' (those are counted separately).
+        A product is 'enriched' if its latest AnalysisResult has an
+        overall_score — regardless of return_risk. return_risk='high' is
+        an output of enrichment, not a sign that enrichment didn't happen.
 
         Args:
             db: Active database session.
 
         Returns:
-            Count of products with a successful latest analysis that is
-            not flagged as high return risk.
+            Count of products whose latest analysis has overall_score IS NOT NULL.
         """
         latest_subq = (
             db.query(
@@ -51,10 +50,7 @@ class StatsRepository:
         return (
             db.query(func.count(AnalysisResult.product_id))
             .join(latest_subq, AnalysisResult.id == latest_subq.c.latest_id)
-            .filter(
-                AnalysisResult.overall_score.isnot(None),
-                AnalysisResult.return_risk != "high",
-            )
+            .filter(AnalysisResult.overall_score.isnot(None))
             .scalar()
             or 0
         )
@@ -110,6 +106,32 @@ class StatsRepository:
                 AnalysisResult.id == latest_subq.c.latest_id,
             )
             .filter(AnalysisResult.overall_score.is_(None))
+            .scalar()
+            or 0
+        )
+
+
+    def get_return_risk_high_count(self, db: Session) -> int:
+        """Return the number of products whose latest analysis has return_risk='high'.
+
+        Args:
+            db: Active database session.
+
+        Returns:
+            Count of products with high return risk in their latest analysis.
+        """
+        latest_subq = (
+            db.query(
+                AnalysisResult.product_id,
+                func.max(AnalysisResult.id).label("latest_id"),
+            )
+            .group_by(AnalysisResult.product_id)
+            .subquery()
+        )
+        return (
+            db.query(func.count(AnalysisResult.product_id))
+            .join(latest_subq, AnalysisResult.id == latest_subq.c.latest_id)
+            .filter(AnalysisResult.return_risk == "high")
             .scalar()
             or 0
         )

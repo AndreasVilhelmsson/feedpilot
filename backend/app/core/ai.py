@@ -3,43 +3,33 @@
 Provides a factory function and a high-level wrapper
 for communicating with the Anthropic Claude API.
 """
+import base64
 import time
-import json
 import re
+
 import anthropic
+
 from app.core.config import get_settings
+from app.core.image import prepare_image_for_vision
 
 MAX_RETRIES = 4
-RETRY_DELAYS = [2, 5, 10, 20]  # sekunder mellan försök
+RETRY_DELAYS = [2, 5, 10, 20]
 
 settings = get_settings()
 
 
 def get_client() -> anthropic.Anthropic:
-    """Return a configured Anthropic client instance.
-
-    Creates a new client on each call using the API key
-    from application settings. This pattern supports
-    easy mocking in tests.
-
-    Returns:
-        A ready-to-use Anthropic client.
-    """
+    """Return a configured Anthropic client instance."""
     return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
+
 def _strip_markdown(text: str) -> str:
-    """Strip markdown code fences if model returns them.
-
-    Args:
-        text: Raw model output.
-
-    Returns:
-        Clean JSON string without markdown wrapping.
-    """
+    """Strip markdown code fences if model returns them."""
     text = text.strip()
     text = re.sub(r'^```(?:json)?\s*', '', text)
     text = re.sub(r'\s*```$', '', text)
     return text.strip()
+
 
 def ask_claude(
     prompt: str,
@@ -62,7 +52,7 @@ def ask_claude(
 
     Raises:
         anthropic.APIError: If the API call fails after all retries.
-        OverloadedError: If the API remains overloaded after MAX_RETRIES attempts.
+        RuntimeError: If the model truncates the response.
     """
     client = get_client()
     kwargs: dict = {
@@ -97,21 +87,18 @@ def ask_claude(
 
 
 def ask_claude_vision(
-    image_data: str,
-    media_type: str,
+    image_data: bytes,
     prompt: str,
     system: str = "",
     max_tokens: int = 2000,
 ) -> dict[str, str | int]:
     """Send an image + text prompt to Claude and return the response.
 
-    Uses the Anthropic multimodal content format to pass a base64-encoded
-    image alongside a text prompt. The image is processed before the text
-    in the content list so Claude sees the visual context first.
+    Converts and resizes the image via prepare_image_for_vision before
+    sending. Handles JPEG, PNG, WebP and AVIF (ffmpeg fallback).
 
     Args:
-        image_data: Base64-encoded image bytes as a string.
-        media_type: MIME type of the image, e.g. 'image/jpeg' or 'image/png'.
+        image_data: Raw image bytes in any supported format.
         prompt: Text instruction describing what Claude should do with the image.
         system: Optional system prompt that sets Claude's behaviour.
         max_tokens: Maximum tokens in the model response.
@@ -125,17 +112,19 @@ def ask_claude_vision(
 
     Raises:
         anthropic.APIError: If the API call fails after all retries.
-        OverloadedError: If the API remains overloaded after MAX_RETRIES attempts.
+        ValueError: If the image cannot be converted.
     """
-    client = get_client()
+    image_bytes, converted_media_type = prepare_image_for_vision(image_data)
+    b64 = base64.standard_b64encode(image_bytes).decode()
 
+    client = get_client()
     content: list[dict] = [
         {
             "type": "image",
             "source": {
                 "type": "base64",
-                "media_type": media_type,
-                "data": image_data,
+                "media_type": converted_media_type,
+                "data": b64,
             },
         },
         {"type": "text", "text": prompt},

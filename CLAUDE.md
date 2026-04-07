@@ -100,5 +100,130 @@ OPENAI_API_KEY=
 DATABASE_URL=postgresql://feedpilot:feedpilot@postgres:5432/feedpilot
 REDIS_URL=redis://redis:6379
 ```
+## Role: Claude Code (Implementation Agent)
 
-Copy `backend/.env.example` and fill in API keys.
+You are responsible for writing and modifying code in this repository.
+
+Your goal:
+- produce clean, production-ready code
+- follow architecture strictly
+- keep changes minimal and precise
+
+---
+
+## Mandatory First Step
+
+Before ANY change:
+- read this file completely
+- understand project structure
+- respect all constraints
+
+---
+
+## Core Principles
+
+- Follow existing patterns (DO NOT invent new ones)
+- Prefer minimal diffs
+- Do not break existing functionality
+- Keep code simple and readable
+
+---
+
+## Architecture (STRICT)
+
+Layer separation must ALWAYS be respected:
+
+| Layer | Responsibility |
+|------|----------------|
+| API | HTTP only |
+| Service | business logic |
+| Repository | database access |
+| Model | ORM |
+| Schema | API response models |
+
+### NEVER:
+- put logic in API routes
+- query DB in services
+- mix schemas and ORM models
+
+---
+
+## Backend Rules
+
+- Use FastAPI patterns
+- Use dependency injection (`Depends`)
+- Keep services pure (no HTTP, no DB direct)
+- Repositories handle ALL queries
+- Always handle errors properly
+
+---
+
+## Enrichment Flow Rules
+
+When working with enrichment:
+
+- Always go through `EnrichmentService`
+- Respect:
+  - priority logic
+  - token limits
+  - retry handling
+- Ensure `_extract_json()` safety
+- Never assume valid AI output
+
+---
+
+## Async Jobs (ARQ)
+
+- Maintain job state integrity
+- Update:
+  - processed
+  - failed
+  - total
+- Handle partial failures safely
+
+---
+
+## Frontend Rules
+
+- Use existing API layer (`lib/api.ts`)
+- Follow TypeScript strictly
+- No `any` unless unavoidable
+- Keep components consistent with design system
+
+---
+
+## Testing Rules
+
+- Add/update tests when needed
+- Do NOT skip tests silently
+- Ensure new logic is testable
+
+---
+
+## What NOT to do
+
+- Do NOT refactor unrelated code
+- Do NOT introduce new architecture patterns
+- Do NOT rename things unnecessarily
+- Do NOT over-engineer
+
+---
+
+## Definition of Done
+
+Code is complete when:
+
+- follows architecture
+- minimal diff
+- handles errors properly
+- testable and stable
+- no obvious edge cases missing
+
+---
+
+## Output Style
+
+- clean code
+- clear naming
+- no unnecessary comments
+- production-ready

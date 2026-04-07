@@ -39,6 +39,7 @@ class StatsService:
         enriched = self._repo.get_enriched_count(db)
         pending = self._repo.get_pending_count(db)
         failed = self._repo.get_failed_count(db)
+        return_risk_high = self._repo.get_return_risk_high_count(db)
 
         enrichment_rate = round(enriched / total * 100, 1) if total > 0 else 0.0
 
@@ -47,6 +48,8 @@ class StatsService:
             enriched=enriched,
             pending=pending,
             failed=failed,
+            needs_attention=pending,
+            return_risk_high=return_risk_high,
             enrichment_rate=enrichment_rate,
         )
 

@@ -24,6 +24,8 @@ class StatsResponse(BaseModel):
     enriched: int = Field(description="Products with a successful analysis result.")
     pending: int = Field(description="Products not yet enriched.")
     failed: int = Field(description="Products whose latest enrichment run failed.")
+    needs_attention: int = Field(description="Products not yet enriched (needs review).")
+    return_risk_high: int = Field(description="Products with latest analysis flagged as high return risk.")
     enrichment_rate: float = Field(
         description="enriched / total_products * 100, rounded to 1 decimal."
     )

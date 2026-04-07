@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import Link from "next/link"
 import { api } from "@/lib/api"
 import type { StatsResponse, JobResponse, BulkEnrichResponse, CatalogProduct, CatalogResponse } from "@/lib/types"
 import { SkeletonCard } from "@/components/ui/SkeletonCard"
@@ -169,7 +170,7 @@ function RecentActivity({ products, loading }: { products: CatalogProduct[]; loa
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-const tabs = ["Overview", "Batch Processing", "Library"]
+const tabs = ["Overview", "Library"]
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("Overview")
@@ -230,10 +231,12 @@ export default function DashboardPage() {
       .catch(() => setHealthOnline(false))
   }, [])
 
-  // ── STEG 3: Stats + activity on mount ────────────────────────────────────
+  // ── STEG 3: Stats + activity on mount, auto-refresh every 10s ───────────
   useEffect(() => {
     fetchStats()
     fetchRecentActivity()
+    const interval = setInterval(fetchStats, 10_000)
+    return () => clearInterval(interval)
   }, [fetchStats, fetchRecentActivity])
 
   // ── STEG 5: Bulk job polling ──────────────────────────────────────────────
@@ -279,12 +282,16 @@ export default function DashboardPage() {
   }
 
   // ── KPI data from stats ───────────────────────────────────────────────────
+  const returnRiskPct = stats && stats.total_products > 0
+    ? ((stats.return_risk_high / stats.total_products) * 100).toFixed(1)
+    : "0"
+
   const kpiCards: KpiCardProps[] = stats
     ? [
         {
           label: "Total SKUs",
           value: stats.total_products.toLocaleString(),
-          delta: "+124 this week",
+          delta: `${stats.enrichment_rate}% enriched`,
           icon: "inventory_2",
           positive: true,
         },
@@ -297,16 +304,16 @@ export default function DashboardPage() {
         },
         {
           label: "Needs attention",
-          value: stats.pending.toLocaleString(),
-          delta: "↓ 38 since yesterday",
+          value: stats.needs_attention.toLocaleString(),
+          delta: "Not yet enriched",
           icon: "warning",
           positive: false,
           extraClass: "border-l-2 border-amber-400",
         },
         {
           label: "Return risk high",
-          value: stats.failed.toLocaleString(),
-          delta: "3.1% of enriched",
+          value: stats.return_risk_high.toLocaleString(),
+          delta: `${returnRiskPct}% of catalog`,
           icon: "assignment_return",
           positive: false,
           extraClass: "border-l-2 border-error bg-error-container/30",
@@ -340,6 +347,12 @@ export default function DashboardPage() {
                 {tab}
               </button>
             ))}
+            <Link
+              href="/processing"
+              className="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-on-surface-variant hover:text-on-surface transition-colors -mb-px"
+            >
+              Batch Processing
+            </Link>
           </div>
           <div className="flex items-center gap-3">
             {/* Health indicator */}

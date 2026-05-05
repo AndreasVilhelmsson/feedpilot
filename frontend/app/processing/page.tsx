@@ -489,7 +489,7 @@ export default function ProcessingPage() {
     return () => clearInterval(t)
   }, [activeJob])
 
-  async function handleStartBatch(size: BatchSize, _selection: ProductSelection, _name: string) {
+  async function handleStartBatch(size: BatchSize) {
     setShowModal(false)
     setStartError(null)
     const limit = size === "all" ? 9999 : size

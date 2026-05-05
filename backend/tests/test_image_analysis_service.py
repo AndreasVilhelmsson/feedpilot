@@ -1,13 +1,12 @@
 """Tests for the image analysis service."""
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
-from app.services.image_analysis_service import (
-    _convert_avif_to_jpeg,
-    _parse_response,
-)
+from app.core.image import _convert_avif_to_jpeg
+from app.services.image_analysis_service import _parse_response
 
 
 def test_parse_response_clamps_numeric_fields() -> None:
@@ -38,6 +37,7 @@ def test_parse_response_clamps_numeric_fields() -> None:
 
 def test_convert_avif_to_jpeg_raises_value_error_on_decode_failure() -> None:
     """Broken AVIF input should surface as a controlled validation error."""
-    with patch("app.services.image_analysis_service.Image.open", side_effect=OSError("bad avif")):
-        with pytest.raises(ValueError, match="AVIF-bilden"):
+    failed_process = SimpleNamespace(returncode=1, stderr=b"bad avif")
+    with patch("app.core.image.subprocess.run", return_value=failed_process):
+        with pytest.raises(ValueError, match="ffmpeg AVIF conversion failed"):
             _convert_avif_to_jpeg(b"not-an-avif")

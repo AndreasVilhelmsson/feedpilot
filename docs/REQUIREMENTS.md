@@ -23,6 +23,24 @@ Auto-detekterade format: Shopify, WooCommerce, Google Shopping, Akeneo
 | FR-10 | Enrich Again (trigger nytt jobb)              | ✅     |
 | FR-11 | Human-in-the-loop feedback (Accept/Reject)    | ✅     |
 | FR-12 | Inline edit av AI-förslag                     | ✅     |
+| FR-28 | Preflight före bulk enrichment: antal produkter, fält, tokens, kostnad, verktyg och modellstrategi | ⬜ |
+| FR-29 | Användarbekräftelse krävs innan dyr/bulk enrichment startar | ⬜ |
+| FR-30 | Kodstyrt fält-, modell- och verktygsval per produkt/fält | ⬜ |
+| FR-31 | Minimal AI-input per task; skicka aldrig hela produktobjektet som default | ⬜ |
+| FR-32 | AI-output valideras med schema/domänregler innan store eller UI | ⬜ |
+| FR-33 | Observability per AI-request: tokens, kostnad, modell, verktyg, status, latency och fel | ⬜ |
+
+### AI-arkitektur
+
+FeedPilot ska vara ett AI-drivet enrichment-system, inte en prompt-baserad wrapper.
+
+| ID    | Krav                                          | Status |
+|-------|-----------------------------------------------|--------|
+| AI-01 | Promptar får instruera men aldrig kontrollera beteende ensamma | ⬜ |
+| AI-02 | Web search, bildanalys, RAG och modellval aktiveras explicit av backend-kod/config | ⬜ |
+| AI-03 | Canonical fields har metadata för relevans, komplexitet, verktygsbehov och modellstrategi | ⬜ |
+| AI-04 | Enrichment pipeline följer extract → normalize → enrich → validate → store | ⬜ |
+| AI-05 | Kostnadsestimat görs före körning och faktisk kostnad loggas efter körning | ⬜ |
 
 ### Frontend
 | ID    | Krav                                          | Status |

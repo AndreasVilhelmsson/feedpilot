@@ -3,7 +3,15 @@
 ## Nuläge
 
 Backend Dag 1–11 är klart. MVP Frontend (Sprint 1) är i stort sett klart.
-Nästa steg är Auth (Sprint 2) och sedan Multi-tenant (Sprint 3) innan första kund.
+Efter reverse engineering är nästa steg inte Auth direkt, utan en stabiliseringsfas.
+
+Nytt beslut:
+
+```txt
+Sprint 1.5 — Stabilisering och AI Control
+```
+
+Auth och multi-tenant ligger kvar, men bör inte starta innan vi har bättre testbas, kodstyrd AI-output och preflight/kostnadskontroll.
 
 ---
 
@@ -20,6 +28,38 @@ Mål: Fungerande UI att demo för externa personer.
 Återstår:
 - View History per produkt (FEED-009)
 - Skeletons på alla datavyer (FEED-013)
+
+---
+
+## Sprint 1.5 — Stabilisering och AI Control
+
+Mål: göra MVP:n reviewbar, testbar och redo att utvecklas mot ett kodstyrt AI enrichment-system.
+
+Prioriterat:
+
+1. Test baseline och verifieringskommando (FEED-060)
+2. Ingestion test coverage (FEED-061)
+3. Enrichment output schema validation (FEED-062)
+4. Preflight för bulk enrichment (FEED-063)
+5. Field metadata och minimal AI payload (FEED-064)
+6. Model/tool decision planner (FEED-065)
+7. AI observability (FEED-066)
+8. API endpoint coverage (FEED-067)
+9. Layering cleanup plan (FEED-068)
+
+Roller:
+
+- Claude Code: implementation.
+- Codex: review, test, arkitekturkontroll och status.
+
+Definition of done för sprinten:
+
+- backend/frontend verifieringskommandon passerar
+- ingestion har riktig testtäckning
+- enrichment-output valideras i kod innan persistence
+- bulk enrichment har preflight innan jobb startar
+- AI-input kan minimeras per fält/task
+- tokens/kostnad/modell/tools kan följas upp
 
 ---
 

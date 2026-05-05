@@ -21,6 +21,7 @@ from app.models.product import Product
 from app.prompts.prompt_manager import get_prompt, get_version
 from app.repositories.product_repository import ProductRepository, get_product_repository
 from app.schemas.canonical import CanonicalProduct
+from app.schemas.enrich import EnrichmentAIOutput
 
 PROMPT_NAME: str = "enrichment_v2"
 RAG_CONTEXT_LIMIT: int = 3
@@ -235,6 +236,7 @@ class EnrichmentService:
             ValueError: If no product with the given sku_id exists.
             RuntimeError: If Claude returns no JSON object.
             json.JSONDecodeError: If Claude returns malformed JSON.
+            pydantic.ValidationError: If AI output fails schema validation.
         """
         product = self._repo.get_by_sku(sku_id, db)
         if product is None:
@@ -265,15 +267,16 @@ class EnrichmentService:
                 f"Claude returnerade inget JSON-objekt. Svar: {raw_text[:200]!r}"
             )
         parsed: dict = _extract_json(raw_text)
+        validated = EnrichmentAIOutput.model_validate(parsed)
 
         analysis = AnalysisResult(
             product_id=product.id,
             sku_id=sku_id,
-            overall_score=parsed.get("overall_score"),
-            issues=parsed.get("issues"),
-            enriched_fields=parsed.get("enriched_fields"),
-            return_risk=parsed.get("return_risk"),
-            action_items=parsed.get("action_items"),
+            overall_score=validated.overall_score,
+            issues=[i.model_dump() for i in validated.issues],
+            enriched_fields={k: v.model_dump() for k, v in validated.enriched_fields.items()},
+            return_risk=validated.return_risk,
+            action_items=validated.action_items,
             prompt_version=get_version(PROMPT_NAME),
             total_tokens=ai_response["total_tokens"],
         )
@@ -284,12 +287,12 @@ class EnrichmentService:
         return {
             "sku_id": sku_id,
             "analysis_id": analysis.id,
-            "overall_score": parsed.get("overall_score"),
-            "enriched_fields": parsed.get("enriched_fields"),
-            "issues": parsed.get("issues", []),
-            "return_risk": parsed.get("return_risk"),
-            "return_risk_reason": parsed.get("return_risk_reason"),
-            "action_items": parsed.get("action_items", []),
+            "overall_score": validated.overall_score,
+            "enriched_fields": {k: v.model_dump() for k, v in validated.enriched_fields.items()},
+            "issues": [i.model_dump() for i in validated.issues],
+            "return_risk": validated.return_risk,
+            "return_risk_reason": validated.return_risk_reason,
+            "action_items": validated.action_items,
             "prompt_version": get_version(PROMPT_NAME),
             "total_tokens": ai_response["total_tokens"],
             "enrichment_priority": priority,

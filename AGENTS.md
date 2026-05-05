@@ -60,7 +60,11 @@ Follow repository layering:
 
 ## AI / Enrichment Rules
 
+- AI must be controlled by code, not prompts alone
+- Treat prompts as instructions, never as enforcement boundaries
 - Validate Claude response parsing (_extract_json safety)
+- Validate parsed AI output against schemas/domain rules before persistence
+- Ensure only code decides allowed fields, enum values, scores, risk states, workflow state, and DB writes
 - Ensure retry logic is respected
 - Handle `max_tokens` failures properly
 - Validate RAG context usage (pgvector search)

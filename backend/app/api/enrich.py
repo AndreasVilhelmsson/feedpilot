@@ -27,9 +27,12 @@ from app.repositories.product_repository import ProductRepository
 from app.schemas.enrich import (
     BulkEnrichRequest,
     EnrichResponse,
+    PreflightRequest,
+    PreflightResponse,
 )
 from app.schemas.job import EnqueueResponse
 from app.services.enrichment_service import EnrichmentService, get_enrichment_service
+from app.services.preflight_service import PreflightService, get_preflight_service
 from app.workers.settings import get_redis_settings
 
 router = APIRouter(
@@ -113,6 +116,45 @@ async def enrich_bulk(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Kunde inte köa enrichment-jobb: {exc}",
+        ) from exc
+
+
+@router.post(
+    "/preflight",
+    response_model=PreflightResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Estimera bulk-enrichment innan körning",
+    description=(
+        "Returnerar en deterministisk uppskattning av antal produkter, "
+        "saknade fält, AI-anrop, tokens och kostnad — utan att göra några AI-anrop. "
+        "Ska anropas innan /enrich/bulk startas."
+    ),
+)
+def enrich_preflight(
+    request: PreflightRequest,
+    service: PreflightService = Depends(get_preflight_service),
+    db: Session = Depends(get_db),
+) -> PreflightResponse:
+    """Compute a preflight estimate for bulk enrichment.
+
+    Args:
+        request: Validated request body containing `limit`.
+        service: Injected PreflightService instance.
+        db: Injected database session.
+
+    Returns:
+        PreflightResponse with product count, field breakdown,
+        token estimates, cost estimate and tool plan.
+
+    Raises:
+        HTTPException: 500 if the preflight computation fails.
+    """
+    try:
+        return service.compute_preflight(limit=request.limit, db=db)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Preflight misslyckades: {exc}",
         ) from exc
 
 

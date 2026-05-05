@@ -4,6 +4,30 @@ Alla FEED-tickets samlade. Uppdatera status i STATUS.md när ett ticket är klar
 
 ---
 
+## Sprint 1.5 — Stabilisering och AI Control
+
+Syfte: skapa kontroll över nuläget innan auth, multi-tenant och nya stora features.
+
+| ID       | Titel                                      | Prioritet | Sprint | Status |
+|----------|--------------------------------------------|-----------|--------|--------|
+| FEED-060 | Test baseline och verifieringskommando     | Hög       | 1.5    | ✅     |
+| FEED-061 | Ingestion test coverage                    | Hög       | 1.5    | ✅     |
+| FEED-062 | Enrichment output schema validation        | Hög       | 1.5    | ✅     |
+| FEED-063 | Preflight för bulk enrichment              | Hög       | 1.5    | ✅     |
+| FEED-064 | Field metadata och minimal AI payload      | Hög       | 1.5    | ⬜     |
+| FEED-065 | Model/tool decision planner                | Hög       | 1.5    | ⬜     |
+| FEED-066 | AI observability                           | Hög       | 1.5    | ⬜     |
+| FEED-067 | API endpoint coverage                      | Medium    | 1.5    | ⬜     |
+| FEED-068 | Layering cleanup plan                      | Medium    | 1.5    | ⬜     |
+
+Rollfördelning:
+- Claude Code implementerar tickets.
+- Codex reviewar, kör tester, analyserar arkitektur och godkänner mot acceptance criteria.
+
+Se `docs/EXECUTION_PLAN.md` för detaljerade ticket-beskrivningar och arbetsflöde.
+
+---
+
 ## Frontend (Sprint 1 / Dag 12–14)
 
 | ID       | Titel                              | Prioritet | Sprint     | Status |

@@ -1,5 +1,85 @@
 # FeedPilot — Verktyg & Infrastruktur
 
+## Claude/Codex arbetsflöde
+
+Framåt ska tickets köras med tydlig rollfördelning:
+
+```txt
+Claude Code = implementation
+Codex       = review, test, arkitekturkontroll
+```
+
+Arbetsregel:
+
+- Claude Code ändrar en fil i taget.
+- Codex analyserar diffen innan nästa fil ändras.
+- Codex kör relevanta verifieringskommandon.
+- Ingen ticket markeras klar utan testresultat eller dokumenterad blocker.
+
+Ticket-underlag finns i `docs/tickets/`. Den mappen är single source of truth för ticket-scope, acceptance criteria och Codex review-status.
+
+Första ticket:
+
+```txt
+docs/tickets/FEED-060-test-baseline.md
+```
+
+---
+
+## Verifiering / Test Baseline
+
+### Kommandon
+
+Backend (kräver Docker):
+
+```bash
+docker compose exec backend pytest tests/
+```
+
+Frontend lint:
+
+```bash
+cd frontend && npm run lint
+```
+
+Frontend tester:
+
+```bash
+cd frontend && npm test -- --runInBand
+```
+
+> **OBS:** Lokal `pytest` kräver att backend-dependencies är installerade i den lokala Python-miljön. Kör alltid backend-tester via Docker för ett tillförlitligt resultat.
+
+### Aktuellt verifierat läge (baseline)
+
+```txt
+Backend: 24 tests pass in Docker
+Frontend lint: pass
+Frontend tests: 7 tests pass
+Known backend warning: FastAPI on_event deprecation
+Known gap: endpoint coverage and AI observability remain incomplete
+```
+
+### Kända gap
+
+- API endpoint-tester för catalog/products/jobs/enrich/ingest är fortfarande begränsade.
+- Field metadata, minimal AI payload, model/tool planner och AI observability återstår i Sprint 1.5.
+- Lokal `pytest` utan Docker kan faila om dependencies saknas i Python-miljön.
+
+### Förväntat grönt resultat
+
+Alla tre kommandon ska passera utan fel. Kända varningar (FastAPI on_event-deprecation) är accepterade tills vidare.
+
+### Review-regel
+
+```txt
+Claude Code skriver implementation.
+Codex kör verifiering och review.
+Ingen ticket går till Done utan testresultat eller dokumenterad blocker.
+```
+
+---
+
 ## Projekthantering
 
 **Linear** (rekommenderat) — snabbare och billigare än Jira för ett litet team.

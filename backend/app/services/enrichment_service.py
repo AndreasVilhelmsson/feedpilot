@@ -15,6 +15,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core import observability
 from app.core.ai import ask_claude
 from app.models.analysis_result import AnalysisResult
 from app.models.product import Product
@@ -22,6 +23,8 @@ from app.prompts.prompt_manager import get_prompt, get_version
 from app.repositories.product_repository import ProductRepository, get_product_repository
 from app.schemas.canonical import CanonicalProduct
 from app.schemas.enrich import EnrichmentAIOutput
+from app.services.enrichment_planner import plan_enrichment
+from app.services.payload_builder import build_enrichment_payload
 
 PROMPT_NAME: str = "enrichment_v2"
 RAG_CONTEXT_LIMIT: int = 3
@@ -137,35 +140,7 @@ def _build_user_message(
     Returns:
         JSON string to pass as the Claude user message.
     """
-    payload: dict[str, Any] = {
-        "product": {
-            "sku_id": canonical.sku_id,
-            "title": canonical.title,
-            "description": canonical.description,
-            "brand": canonical.brand,
-            "category": canonical.category,
-            "price": canonical.price,
-            "color": canonical.color,
-            "material": canonical.material,
-            "size": canonical.size,
-            "gender": canonical.gender,
-            "attributes": canonical.extra_attributes,
-        },
-        "rag_context": [
-            {
-                "sku_id": ctx["sku_id"],
-                "title": ctx["title"],
-                "category": ctx["category"],
-                "attributes": ctx["attributes"],
-                "similarity": ctx["similarity"],
-            }
-            for ctx in rag_context
-        ],
-        "missing_fields": missing_fields,
-        "enrichment_instruction": (
-            f"Följande kärnfält saknas och ska enrichas: {missing_fields}"
-        ),
-    }
+    payload = build_enrichment_payload(canonical, missing_fields, rag_context)
     return json.dumps(payload, ensure_ascii=False)
 
 
@@ -244,30 +219,71 @@ class EnrichmentService:
 
         canonical = self._product_to_canonical(product)
         missing_fields = canonical.missing_core_fields()
+        plan = plan_enrichment(missing_fields)
         priority = canonical.enrichment_priority()
         max_tokens = MAX_TOKENS_BY_PRIORITY[priority]
 
-        rag_query = " ".join(filter(None, [product.title, product.category]))
-        rag_context = self._repo.semantic_search(
-            query=rag_query,
-            db=db,
-            limit=RAG_CONTEXT_LIMIT,
-        )
-
-        user_message = _build_user_message(canonical, rag_context, missing_fields)
-        ai_response = ask_claude(
-            prompt=user_message,
-            system=get_prompt(PROMPT_NAME),
-            max_tokens=max_tokens,
-        )
-
-        raw_text = ai_response["answer"]
-        if not raw_text or "{" not in raw_text:
-            raise RuntimeError(
-                f"Claude returnerade inget JSON-objekt. Svar: {raw_text[:200]!r}"
+        if plan.use_rag:
+            rag_query = " ".join(filter(None, [product.title, product.category]))
+            rag_context = self._repo.semantic_search(
+                query=rag_query,
+                db=db,
+                limit=RAG_CONTEXT_LIMIT,
             )
-        parsed: dict = _extract_json(raw_text)
-        validated = EnrichmentAIOutput.model_validate(parsed)
+        else:
+            rag_context = []
+
+        user_message = _build_user_message(canonical, rag_context, plan.target_fields)
+        ai_response: dict = {}
+        try:
+            ai_response = ask_claude(
+                prompt=user_message,
+                system=get_prompt(PROMPT_NAME),
+                max_tokens=max_tokens,
+            )
+
+            raw_text = ai_response["answer"]
+            if not raw_text or "{" not in raw_text:
+                raise RuntimeError(
+                    f"Claude returnerade inget JSON-objekt. Svar: {raw_text[:200]!r}"
+                )
+            parsed: dict = _extract_json(raw_text)
+            validated = EnrichmentAIOutput.model_validate(parsed)
+        except Exception as exc:
+            observability.log_ai_request(
+                observability.AIRequestMetadata(
+                    sku_id=sku_id,
+                    prompt_name=PROMPT_NAME,
+                    prompt_version=get_version(PROMPT_NAME),
+                    model=plan.model,
+                    model_strategy=plan.model_strategy,
+                    target_fields=list(plan.target_fields),
+                    use_rag=plan.use_rag,
+                    input_tokens=ai_response.get("input_tokens", 0),
+                    output_tokens=ai_response.get("output_tokens", 0),
+                    total_tokens=ai_response.get("total_tokens", 0),
+                    status="error",
+                    error_type=type(exc).__name__,
+                )
+            )
+            raise
+
+        observability.log_ai_request(
+            observability.AIRequestMetadata(
+                sku_id=sku_id,
+                prompt_name=PROMPT_NAME,
+                prompt_version=get_version(PROMPT_NAME),
+                model=plan.model,
+                model_strategy=plan.model_strategy,
+                target_fields=list(plan.target_fields),
+                use_rag=plan.use_rag,
+                input_tokens=ai_response["input_tokens"],
+                output_tokens=ai_response["output_tokens"],
+                total_tokens=ai_response["total_tokens"],
+                status="success",
+                error_type=None,
+            )
+        )
 
         analysis = AnalysisResult(
             product_id=product.id,

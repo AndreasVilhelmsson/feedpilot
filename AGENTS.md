@@ -13,6 +13,23 @@ Prefer minimal, precise fixes.
 
 ---
 
+## Project Context (FeedPilot)
+
+Stack: FastAPI + SQLAlchemy 2 + PostgreSQL 15 (pgvector) + ARQ/Redis + Next.js 14 + Anthropic Claude + OpenAI embeddings
+
+Architecture: API → Service → Repository → Model/DB
+
+Enrichment pipeline: extract → normalize → enrich → validate → store
+
+Key files to know:
+- `backend/app/services/enrichment_service.py` — core orchestration
+- `backend/app/core/ai.py` — Claude/OpenAI clients
+- `backend/app/schemas/canonical.py` — CanonicalProduct (AI input source of truth)
+- `backend/app/workers/tasks.py` — ARQ bulk task
+- `backend/app/repositories/product_repository.py` — pgvector semantic search
+
+---
+
 ## Primary Responsibilities
 
 ### 1. Code Review
@@ -47,14 +64,36 @@ Follow repository layering:
 - API (`api/`) → HTTP only
 - Services (`services/`) → business logic ONLY
 - Repositories (`repositories/`) → DB access ONLY
-- Models (`models/`) → ORM definitions
-- Schemas (`schemas/`) → Pydantic models
+- Models (`models/`) → ORM definitions (Column-style, NOT Mapped[])
+- Schemas (`schemas/`) → Pydantic v2 models (ConfigDict)
 
 ### NEVER ALLOW:
 - business logic in API layer
 - SQLAlchemy queries outside repositories
 - direct DB usage in services
 - mixing ORM models with API responses
+- `Mapped[]` type annotations in ORM models
+
+---
+
+## FeedPilot-Specific Code Smells (Flag These)
+
+These are known mistakes in this codebase — flag immediately if seen:
+
+| Smell | Severity | Why |
+|---|---|---|
+| `Mapped[]` used in ORM model | HIGH | Breaks SQLAlchemy 2 Column-style convention |
+| `semantic_search` called outside `EnrichmentService` | HIGH | Breaks service boundary |
+| `max_tokens` set below 4096 | HIGH | All priority levels use 4096 |
+| `job.result` written before all products processed | HIGH | Race condition / data loss |
+| Full Product ORM sent to Claude instead of `CanonicalProduct` | HIGH | Token waste + trust boundary violation |
+| SQLAlchemy query in a service file | HIGH | Repository bypass |
+| Business logic in API route | HIGH | Layer violation |
+| AI output used without Pydantic validation | HIGH | Trust boundary violation |
+| `any` type in TypeScript without comment | MEDIUM | Type safety |
+| Missing preflight before bulk enrichment | MEDIUM | Cost control |
+| Token usage not logged per enrichment call | MEDIUM | Observability gap |
+| ARM64-incompatible native package installed in Docker | MEDIUM | Build failure risk |
 
 ---
 
@@ -62,57 +101,72 @@ Follow repository layering:
 
 - AI must be controlled by code, not prompts alone
 - Treat prompts as instructions, never as enforcement boundaries
-- Validate Claude response parsing (_extract_json safety)
-- Validate parsed AI output against schemas/domain rules before persistence
-- Ensure only code decides allowed fields, enum values, scores, risk states, workflow state, and DB writes
-- Ensure retry logic is respected
-- Handle `max_tokens` failures properly
-- Validate RAG context usage (pgvector search)
+- Validate Claude response parsing (`_extract_json` safety)
+- Validate parsed AI output against Pydantic schemas before persistence
+- Ensure only code decides: allowed fields, enum values, scores, risk states, workflow state, DB writes
+- Ensure retry logic is respected (4 attempts, delays [2,5,10,20]s on HTTP 529)
+- Handle `stop_reason == "max_tokens"` failures properly
+- Validate RAG context usage (pgvector semantic search)
+- Preflight required before every bulk enrichment run
 
 ---
 
 ## Async Job Rules
 
-- Ensure job status transitions are correct:
-  pending → running → completed/failed
-- Validate `processed`, `failed`, `total`
-- Ensure partial failures are handled
+- Ensure job status transitions are correct: `pending → running → completed/failed`
+- Validate `processed`, `failed`, `total` updated atomically per product
+- Ensure partial failures are handled (one product failure must not kill the job)
+- `job.result` must only be written after the full run completes
 
 ---
 
 ## Verification Commands
 
-### Backend
-- pytest tests/
-- specific test file if relevant
+```bash
+# Backend tests
+docker compose exec backend pytest tests/
 
-### Frontend
-- npm run lint
+# Single file
+docker compose exec backend pytest tests/test_ingest.py -v
 
-### System
-- check worker logs if async touched
+# Frontend lint
+cd frontend && npm run lint
+
+# Worker logs (if async touched)
+docker compose logs -f worker
+```
 
 ---
 
-## Output Format (IMPORTANT)
+## When Reviewing a Diff
+
+Always ask for:
+1. The relevant Pydantic schema from `schemas/`
+2. Which layer the changed file belongs to
+3. The ARQ task signature if async is involved
+4. Which enrichment pipeline step is being modified
+
+---
+
+## Output Format (MANDATORY)
 
 Always respond with:
 
 ### 1. Findings
 - clear bullet points
-- severity (low / medium / high)
+- severity: `LOW` / `MEDIUM` / `HIGH`
 
 ### 2. Suggested Fixes
 - minimal changes only
-- code snippets if needed
+- code snippets only if needed
 
 ### 3. Missing Tests
-- what should be tested
+- what should be tested and why
 
 ### 4. Verdict
 - ✅ Ready
-- ⚠️ Needs fixes
-- ❌ Not ready
+- ⚠️ Needs fixes (list what)
+- ❌ Not ready (list blockers)
 
 ---
 

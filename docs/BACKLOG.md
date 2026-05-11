@@ -14,11 +14,14 @@ Syfte: skapa kontroll över nuläget innan auth, multi-tenant och nya stora feat
 | FEED-061 | Ingestion test coverage                    | Hög       | 1.5    | ✅     |
 | FEED-062 | Enrichment output schema validation        | Hög       | 1.5    | ✅     |
 | FEED-063 | Preflight för bulk enrichment              | Hög       | 1.5    | ✅     |
-| FEED-064 | Field metadata och minimal AI payload      | Hög       | 1.5    | ⬜     |
-| FEED-065 | Model/tool decision planner                | Hög       | 1.5    | ⬜     |
-| FEED-066 | AI observability                           | Hög       | 1.5    | ⬜     |
-| FEED-067 | API endpoint coverage                      | Medium    | 1.5    | ⬜     |
-| FEED-068 | Layering cleanup plan                      | Medium    | 1.5    | ⬜     |
+| FEED-064 | Field metadata och minimal AI payload      | Hög       | 1.5    | ✅     |
+| FEED-065 | Model/tool decision planner                | Hög       | 1.5    | ✅     |
+| FEED-065B | Integrera planner i EnrichmentService     | Hög       | 1.5    | ✅     |
+| FEED-066 | AI observability                           | Hög       | 1.5    | ✅     |
+| FEED-067 | API endpoint coverage                      | Medium    | 1.5    | ✅     |
+| FEED-068 | Layering cleanup plan                      | Medium    | 1.5    | ✅     |
+| FEED-069 | Catalog API test coverage                  | Hög       | 1.5    | ✅     |
+| FEED-069B | CatalogRepository extraction              | Hög       | 1.5    | ✅     |
 
 Rollfördelning:
 - Claude Code implementerar tickets.

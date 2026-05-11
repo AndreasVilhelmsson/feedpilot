@@ -53,17 +53,17 @@ cd frontend && npm test -- --runInBand
 ### Aktuellt verifierat läge (baseline)
 
 ```txt
-Backend: 24 tests pass in Docker
+Backend: 56 tests pass in Docker
 Frontend lint: pass
 Frontend tests: 7 tests pass
 Known backend warning: FastAPI on_event deprecation
-Known gap: endpoint coverage and AI observability remain incomplete
+Known gap: products/jobs endpoint coverage and persisted AI observability remain incomplete
 ```
 
 ### Kända gap
 
-- API endpoint-tester för catalog/products/jobs/enrich/ingest är fortfarande begränsade.
-- Field metadata, minimal AI payload, model/tool planner och AI observability återstår i Sprint 1.5.
+- API endpoint-tester för products/jobs/ingest är fortfarande begränsade.
+- Persisted AI observability och products/jobs endpoint coverage återstår i Sprint 1.5.
 - Lokal `pytest` utan Docker kan faila om dependencies saknas i Python-miljön.
 
 ### Förväntat grönt resultat

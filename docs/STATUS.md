@@ -15,15 +15,15 @@ Det tidigare statusläget beskriver främst vad som är byggt. Efter reverse eng
 |---|---|---|
 | Backend features | Många centrala flöden finns: ingest, enrichment, RAG, image analysis, jobs, variants | Byggt, men ojämnt reviewat |
 | Frontend features | Dashboard, catalog, processing, product detail och tester finns | Delvis verifierat |
-| Tester | Backend 24 tester passerar i Docker; frontend 7 tester passerar enligt FEED-060 baseline | Testtäckning är bättre men fortfarande låg jämfört med feature-yta |
+| Tester | Backend 56 tester passerar i Docker; frontend 7 tester passerar enligt FEED-060 baseline | Testtäckning är bättre men fortfarande låg jämfört med feature-yta |
 | Lint | Frontend lint passerar efter fix | Verifierat |
 | Backend lokal miljö | `pytest` lokalt failar utan backend deps (`fastapi` saknas) | Miljö behöver dokumenteras/fixas |
 | Docker runtime | API, postgres, redis och worker kör | Verifierat via `docker compose ps` |
 | AI-arkitektur | Prompt manager och AI core finns | Behöver flyttas mot kodstyrd enrichment |
 | Preflight/kostnadskontroll | Backend preflight finns som första pass via FEED-063 | Frontend UI och confirmation enforcement återstår |
-| Observability | Token usage finns delvis, men kostnad/model/tool logging saknas | Viktigt gap |
+| Observability | Enrichment AI-request metadata loggas strukturerat som första pass | Delvis verifierat |
 | DB/migrations | `create_tables()` på startup | Inte produktionsmoget |
-| Layering | Dokumenterad strikt layering, men vissa routes/services gör DB queries direkt | Arkitekturdrift |
+| Layering | FEED-068 kartlade direkta DB-queries och repository-gap | Plan finns, implementation återstår |
 
 ### Verifierade kommandon
 
@@ -49,7 +49,7 @@ docker compose exec backend pytest tests/
 
 Resultat:
 
-- 24 tester passerar.
+- 56 tester passerar.
 - 2 warnings: `@app.on_event("startup")` är deprecated i FastAPI.
 
 Lokal backend:
@@ -84,7 +84,7 @@ Ej aktivt täckt:
 - enrichment API endpoints
 - RAG/semantic search
 - ARQ job flow
-- products/catalog endpoints
+- products endpoints
 - variants
 - stats
 - apply accepted fields
@@ -97,7 +97,14 @@ Ej aktivt täckt:
 - FEED-061 lade till ingestion service-tester.
 - FEED-062 lade till Pydantic-validering av AI-output före persistence.
 - FEED-063 lade till backend preflight för bulk enrichment.
-- Backendtester passerar nu i Docker: 24 tester, 2 kända FastAPI-varningar.
+- FEED-064 lade till field metadata och minimal AI-payload för enrichment.
+- FEED-065 lade till backend-styrd model/tool planner.
+- FEED-065B integrerade plannern i `EnrichmentService` för target fields och RAG-beslut.
+- FEED-066 lade till strukturerad AI-request logging för enrichment.
+- FEED-067 lade till HTTP-level endpoint-tester för enrichment preflight och single enrichment.
+- FEED-069 lade till HTTP-level endpoint-tester för catalog före repository-refaktor.
+- FEED-069B flyttade catalog-queryn från API-lagret till `CatalogRepository`.
+- Backendtester passerar nu i Docker: 56 tester, 2 kända FastAPI-varningar.
 
 ### Nuläge vs önskat AI-läge
 
@@ -123,10 +130,11 @@ Nuvarande läge:
 - Vissa AI-flöden utanför enrichment kan fortfarande returnera eller spara lös `dict`-shape.
 - Bulk enrichment kan köas via ARQ.
 - Preflight med token-/kostnadsestimat finns för bulk enrichment som backend-first första pass.
-- Modellval är inte dynamiskt per uppgift.
-- Verktygsval är inte en tydlig backend-plan per fält.
-- Input-minimering finns inte som generell mekanism.
-- Observability är ofullständig.
+- Modellstrategi beräknas per uppgift, men konkret modellbyte är inte integrerat ännu.
+- RAG-beslut styrs nu av backend-plannern för enrichment. Web search och image analysis är fortfarande inte integrerade.
+- Input-minimering finns för enrichment som första pass via field metadata och payload-builder.
+- Observability finns som första logging-pass för enrichment. DB-persistens, kostnad
+  och job-level summary återstår.
 
 ### Prioriterad nästa-steg-plan
 
@@ -148,19 +156,18 @@ Nuvarande läge:
 
 1. Koppla preflight till frontend-flödet.
 2. Lägg senare confirmation token/preflight-id innan ARQ-jobb skapas.
-3. Ersätt estimates med faktisk kostnadslogg när FEED-066 finns.
+3. Ersätt estimates med faktisk kostnadslogg när tokenpriser och persistens finns.
 
 #### Fas 4 — Fältmetadata och input-minimering
 
-1. Lägg metadata per canonical field: relevans, komplexitet, tool requirements, model strategy.
-2. Bygg task payload per fält.
-3. Förhindra att hela produktobjekt skickas till modellen som default.
-4. Lägg tester som kontrollerar att payload bara innehåller relevanta fält.
+1. Utöka metadata när fler enrichment-flöden än core product enrichment använder samma mekanism.
+2. Säkerställ att nya AI-flöden använder payload-builder eller motsvarande minimal payload.
+3. Koppla framtida modellkonfiguration till planner utan att hårdkoda nya model-ID:n i service-lagret.
 
 #### Fas 5 — Observability och drift
 
 1. Ersätt `print()` med strukturerad logging.
-2. Logga model, tokens, kostnad, tools, promptversion, latency, status och fel per AI-request.
+2. Persistera AI-request metadata när migrationsspåret är beslutat.
 3. Lägg job-level summary: total tokens, total cost, processed, failed.
 4. Flytta från `create_tables()` till Alembic migrations.
 

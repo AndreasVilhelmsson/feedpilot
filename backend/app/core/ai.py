@@ -4,6 +4,7 @@ Provides a factory function and a high-level wrapper
 for communicating with the Anthropic Claude API.
 """
 import base64
+import logging
 import time
 import re
 
@@ -14,6 +15,8 @@ from app.core.image import prepare_image_for_vision
 
 MAX_RETRIES = 4
 RETRY_DELAYS = [2, 5, 10, 20]
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -82,7 +85,7 @@ def ask_claude(
         except anthropic.APIStatusError as e:
             if e.status_code != 529 or attempt >= MAX_RETRIES:
                 raise
-            print(f"API överbelastad, försök {attempt}/{MAX_RETRIES}. Väntar {delay}s...")
+            logger.warning("API överbelastad, försök %d/%d. Väntar %ds...", attempt, MAX_RETRIES, delay)
             time.sleep(delay)
 
 
@@ -151,5 +154,5 @@ def ask_claude_vision(
         except anthropic.APIStatusError as e:
             if e.status_code != 529 or attempt >= MAX_RETRIES:
                 raise
-            print(f"API överbelastad, försök {attempt}/{MAX_RETRIES}. Väntar {delay}s...")
+            logger.warning("API överbelastad, försök %d/%d. Väntar %ds...", attempt, MAX_RETRIES, delay)
             time.sleep(delay)

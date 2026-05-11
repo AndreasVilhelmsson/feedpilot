@@ -244,6 +244,8 @@ Berörda filer:
 
 ### FEED-064 — Field metadata och minimal AI payload
 
+Status: Done. Se `docs/tickets/FEED-064-field-metadata-minimal-ai-payload.md`.
+
 Problem:
 
 Systemet saknar generell mekanism för att avgöra vilka fält som är relevanta för en AI-task.
@@ -268,6 +270,8 @@ Berörda filer:
 
 ### FEED-065 — Model/tool decision planner
 
+Status: Done. Se `docs/tickets/FEED-065-model-tool-decision-planner.md`.
+
 Problem:
 
 Modellval och verktygsaktivering är inte en tydlig backend-plan per task.
@@ -289,7 +293,35 @@ Berörda filer:
 - `backend/app/services/enrichment_service.py`
 - `backend/app/core/ai.py`
 
+### FEED-065B — Integrera enrichment planner i EnrichmentService
+
+Status: Done. Se `docs/tickets/FEED-065B-enrichment-planner-integration.md`.
+
+Problem:
+
+Plannern finns men används ännu inte i enrichment-pipelinen.
+
+Mål:
+
+`EnrichmentService` ska använda `plan_enrichment()` för att styra target fields och
+om RAG-context hämtas.
+
+Acceptance criteria:
+
+- `plan_enrichment()` anropas efter `canonical.missing_core_fields()`.
+- `_build_user_message()` får `plan.target_fields`.
+- `semantic_search()` körs bara när `plan.use_rag=True`.
+- `ask_claude()`-signaturen ändras inte i detta steg.
+- Tester täcker både RAG och no-RAG path.
+
+Berörda filer:
+
+- `backend/app/services/enrichment_service.py`
+- `backend/tests/test_enrichment_service.py`
+
 ### FEED-066 — AI observability
+
+Status: Done. Se `docs/tickets/FEED-066-ai-observability.md`.
 
 Problem:
 
@@ -315,6 +347,8 @@ Berörda filer:
 
 ### FEED-067 — API endpoint coverage
 
+Status: Done. Se `docs/tickets/FEED-067-api-endpoint-coverage.md`.
+
 Problem:
 
 Flera centrala endpoints saknar testtäckning.
@@ -332,6 +366,8 @@ Acceptance criteria:
 - Felvägar 404/500 täcks där rimligt.
 
 ### FEED-068 — Layering cleanup plan
+
+Status: Done. Se `docs/tickets/FEED-068-layering-cleanup-plan.md`.
 
 Problem:
 
@@ -357,13 +393,15 @@ Rekommenderad ordning:
 4. FEED-063 — Preflight
 5. FEED-064 — Field metadata/minimal payload
 6. FEED-065 — Model/tool planner
-7. FEED-066 — Observability
-8. FEED-067 — Endpoint coverage
-9. FEED-068 — Layering cleanup plan
+7. FEED-065B — Planner integration
+8. FEED-066 — Observability
+9. FEED-067 — Endpoint coverage
+10. FEED-068 — Layering cleanup plan
 
 ## Arbetsregel framåt
 
-FEED-060 till FEED-063 är klara. Nästa stora feature bör fortfarande vänta tills FEED-064 till FEED-066 har gett bättre kontroll över payload, model/tool-beslut och observability.
+FEED-060 till FEED-068 är klara. Nästa stora feature bör fortfarande vänta tills
+de högst prioriterade layering-fynden har fått testskydd och smala refaktor-tickets.
 
 Auth och multi-tenant är viktiga, men de bygger ovanpå en osäker foundation om enrichment-flödet inte är testat och kostnadskontrollerat.
 

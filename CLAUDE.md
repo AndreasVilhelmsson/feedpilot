@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides **project knowledge** to Claude Code.
+Behavior rules and workflow live in `.claude/output-styles/feedpilot.md`.
 
 ## Session Startup
 
@@ -94,7 +95,7 @@ FastAPI dependency injection (`Depends()`) wires repositories into services and 
 
 `POST /api/v1/products/{sku_id}/enrich` → `EnrichmentService.enrich_product()`:
 
-1. Fetch `Product` ORM → convert to `CanonicalProduct` (structured schema in `schemas/canonical.py`)
+1. Fetch `Product` ORM → convert to `CanonicalProduct` (`schemas/canonical.py`)
 2. Determine `enrichment_priority` and `max_tokens` from `MAX_TOKENS_BY_PRIORITY` (all levels: 4096)
 3. Semantic search via pgvector (`repositories/product_repository.py::semantic_search`) for RAG context
 4. Call `ask_claude()` with `enrichment_v2` prompt + user message JSON
@@ -115,21 +116,19 @@ Bulk enrichment runs as an ARQ background task (`workers/tasks.py::enrich_bulk_t
 
 ### Frontend
 
-All pages are `"use client"` components under `app/`. API calls go through `lib/api.ts` (axios instance pointing at `http://localhost:8010`). Types are centralised in `lib/types.ts`.
+All pages are `"use client"` components under `app/`. API calls go through `lib/api.ts` (axios instance at `http://localhost:8010`). Types centralised in `lib/types.ts`.
 
-Design system uses Material Design 3 tokens defined in `tailwind.config.ts`. Primary: `#072078`, background: `#fcf9f5`. Use `material-symbols-outlined` for icons.
+Design system: Material Design 3 tokens in `tailwind.config.ts`. Primary: `#072078`, background: `#fcf9f5`. Icons: `material-symbols-outlined`.
 
 ### Feed Ingestion
 
-`POST /api/v1/ingest/csv|xlsx` → `IngestionService` auto-detects feed schema (Shopify, WooCommerce, Google Shopping, Akeneo, or generic CSV). Structured sub-fields (brand, color, material, size, gender) land in `Product.attributes` JSON column; remaining fields go to `Product.raw_data`.
+`POST /api/v1/ingest/csv|xlsx` → `IngestionService` auto-detects feed schema (Shopify, WooCommerce, Google Shopping, Akeneo, or generic CSV). Structured sub-fields land in `Product.attributes`; remaining fields go to `Product.raw_data`.
 
 ---
 
 ## AI Control Rule
 
-AI behavior must be controlled by code, not by prompts alone.
-
-Prompts may guide tone, format, and task intent, but application code must own:
+AI behavior must be controlled by code, not by prompts alone. Application code must own:
 - allowed input/output schemas
 - parsing and validation
 - allowed fields and enum values
@@ -138,26 +137,11 @@ Prompts may guide tone, format, and task intent, but application code must own:
 - persistence decisions
 - user-visible status transitions
 
-Never trust a prompt instruction as a safety boundary. If a rule matters to the product, enforce it in schemas, services, validators, repositories, or tests.
+Every bulk enrichment must follow: **preflight → confirm → queue → validate → store**
 
-FeedPilot is an AI-driven enrichment system, not a prompt-based wrapper. Features such as web search, image analysis, model choice, RAG usage, and field selection must be activated explicitly by backend code/configuration. Do not rely on prompt text to make the model decide whether a tool is allowed or required.
+Enrichment pipeline: `extract → normalize → enrich → validate → store`
 
-Every large or bulk enrichment must follow this control flow:
-
-1. **Preflight:** calculate product count, fields to process, estimated input/output tokens, estimated cost, required tools, and selected model strategy.
-2. **User confirmation:** do not start the expensive run until the user confirms the preflight.
-3. **Queue/batch execution:** process products in bounded batches or via ARQ.
-4. **Per-product planning:** code decides fields, model, tools, and minimal input payload from field metadata.
-5. **Validation:** parse and validate AI output before storing or exposing it.
-6. **Observability:** log tokens, cost, model, tools, status, and errors per product/request.
-
-The enrichment pipeline must be:
-
-```
-extract → normalize → enrich → validate → store
-```
-
-Minimize model input. Never send an entire product object by default. Send only fields relevant to the specific enrichment task, derived from canonical schema metadata and field complexity.
+Never send a full Product ORM to Claude — always use `CanonicalProduct`.
 
 ---
 
@@ -177,10 +161,10 @@ Minimize model input. Never send an entire product object by default. Send only 
 
 ## Code Review Workflow (Claude Code ↔ Codex)
 
-**Claude Code** — implementation, tests, architecture adherence  
+**Claude Code** — implementation, tests, architecture adherence
 **Codex (ChatGPT)** — code review, critique, alternative approaches
 
-When preparing a diff for Codex review, always include:
+When preparing a diff for Codex review (`/codex-review`), always include:
 - The relevant Pydantic schema from `schemas/`
 - The layer this file belongs to (API / Service / Repository / Model / Schema)
 - The ARQ task signature if async is involved
@@ -199,142 +183,7 @@ REDIS_URL=redis://redis:6379
 
 ---
 
-## Role: Claude Code (Implementation Agent)
-
-You are responsible for writing and modifying code in this repository.
-
-Your goal:
-- produce clean, production-ready code
-- follow architecture strictly
-- keep changes minimal and precise
-
----
-
-## Mandatory First Step
-
-Before ANY change:
-- read this file completely
-- understand project structure
-- respect all constraints
-
----
-
-## Implementation Workflow (MANDATORY)
-
-Always work one file at a time. Never write multiple files in one step.
-
-For each file, before writing any code:
-1. State which file you are about to change and why
-2. Explain the file's responsibility in the architecture
-3. Explain how it connects to adjacent files (what calls it, what it calls)
-4. Explain which pattern you are following and why
-5. **Wait for explicit approval before writing code**
-
-After writing the file:
-6. Summarize what changed and what to verify
-7. Ask if you should proceed to the next file
-
-If a task requires multiple files, start by listing all files in order with a one-line reason for each. Then work through them one at a time, waiting for approval between each step.
-
----
-
-## Core Principles
-
-- Follow existing patterns (DO NOT invent new ones)
-- Prefer minimal diffs
-- Do not break existing functionality
-- Keep code simple and readable
-
----
-
-## Architecture (STRICT)
-
-Layer separation must ALWAYS be respected:
-
-| Layer | Responsibility |
-|------|----------------|
-| API | HTTP only |
-| Service | business logic |
-| Repository | database access |
-| Model | ORM |
-| Schema | API response models |
-
-### NEVER:
-- put logic in API routes
-- query DB in services
-- mix schemas and ORM models
-
----
-
-## Backend Rules
-
-- Use FastAPI patterns
-- Use dependency injection (`Depends`)
-- Keep services pure (no HTTP, no DB direct)
-- Repositories handle ALL queries
-- Always handle errors properly
-
----
-
-## Enrichment Flow Rules
-
-When working with enrichment:
-
-- Always go through `EnrichmentService`
-- Respect:
-  - priority logic
-  - token limits (4096 for all levels)
-  - retry handling
-- Ensure `_extract_json()` safety
-- Never assume valid AI output
-- Enforce AI output contracts in code, not only in prompt text
-- Validate parsed AI fields against Pydantic/domain schemas before persistence
-- Do not let Claude decide workflow state, database writes, allowed field names, or trust boundaries without code-side checks
-- Add or preserve preflight before large/bulk enrichment runs
-- Use backend field metadata to decide which fields, tools, and model are needed
-- Minimize input tokens by sending only relevant canonical fields
-- Log token usage, estimated/actual cost, selected model, tools used, and per-product outcome
-
----
-
-## Async Jobs (ARQ)
-
-- Maintain job state integrity
-- Update atomically: `processed`, `failed`, `total`
-- Handle partial failures safely
-- Do NOT write to `job.result` before the full run is complete
-
----
-
-## Frontend Rules
-
-- Use existing API layer (`lib/api.ts`)
-- Follow TypeScript strictly
-- No `any` unless unavoidable
-- Keep components consistent with design system (MD3 tokens, `#072078` primary)
-
----
-
-## Testing Rules
-
-- Add/update tests when needed
-- Do NOT skip tests silently
-- Ensure new logic is testable
-
----
-
-## What NOT to Do
-
-- Do NOT refactor unrelated code
-- Do NOT introduce new architecture patterns
-- Do NOT rename things unnecessarily
-- Do NOT over-engineer
-
----
-
 ## Definition of Done (Checklist)
-
-Code is complete when ALL of these are true:
 
 - [ ] Layer separation respected (no logic in API, no DB in Service)
 - [ ] Error handling: HTTP exceptions in API, `RuntimeError` in Service
@@ -345,12 +194,3 @@ Code is complete when ALL of these are true:
 - [ ] Minimal diff — no unrelated changes
 - [ ] Test added/updated for new logic
 - [ ] No obvious edge cases missing
-
----
-
-## Output Style
-
-- clean code
-- clear naming
-- no unnecessary comments
-- production-ready

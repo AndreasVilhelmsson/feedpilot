@@ -16,20 +16,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Skapar en minimal .env så docker compose inte krashar på saknade vars.
-      # Riktiga API-nycklar behövs inte för tester eftersom AI-anrop är mockade.
-      - name: Create .env from example
+      # GitHub Actions kör på linux/amd64. docker-compose.yml har platform: linux/arm64
+      # (satt för Mac M-chip). Den här env-variabeln overridar det globalt i CI
+      # utan att vi behöver ändra docker-compose.yml.
+      - name: Set Docker platform for CI
+        run: echo "DOCKER_DEFAULT_PLATFORM=linux/amd64" >> $GITHUB_ENV
+
+      # Backend och worker läser ./backend/.env — inte en .env i rooten.
+      # Skapar minimala värden som räcker för att starta tjänsten och köra tester.
+      # Riktiga API-nycklar behövs inte eftersom AI-anrop är mockade i testerna.
+      - name: Create backend .env
         run: |
-          cp .env.example .env
-          echo "ANTHROPIC_API_KEY=test-key" >> .env
-          echo "OPENAI_API_KEY=test-key" >> .env
+          cat > backend/.env << 'EOF'
+          ANTHROPIC_API_KEY=test-key
+          OPENAI_API_KEY=test-key
+          DATABASE_URL=postgresql://feedpilot:feedpilot@postgres:5432/feedpilot
+          REDIS_URL=redis://redis:6379
+          EOF
 
-      # Startar postgres, redis och backend-containern i bakgrunden.
-      # --build säkerställer att image är uppdaterad med senaste koden.
+      # Startar postgres, redis och backend i bakgrunden.
+      # worker utelämnas medvetet — den behövs inte för att köra pytest.
       - name: Build and start services
-        run: docker compose up -d --build
+        run: docker compose up -d --build postgres redis backend
 
-      # Väntar tills postgres accepterar anslutningar innan pytest körs.
+      # Väntar tills postgres accepterar anslutningar.
       # Utan denna wait kan tester misslyckas med "connection refused".
       - name: Wait for postgres to be ready
         run: |
@@ -37,7 +47,8 @@ jobs:
           timeout 60 bash -c \
             'until docker compose exec -T postgres pg_isready -U feedpilot; do sleep 2; done'
 
-      # Väntar tills backend-containern är uppe och FastAPI har startat.
+      # Väntar tills FastAPI är uppe och svarar på /health.
+      # Porten är 8010 (mappad från 8000 inuti containern).
       - name: Wait for backend to be healthy
         run: |
           echo "Waiting for backend..."
@@ -45,11 +56,10 @@ jobs:
             'until curl -sf http://localhost:8010/health > /dev/null; do sleep 2; done'
 
       # Kör alla tester inuti backend-containern, precis som lokalt.
-      # -v ger verbose output — du ser exakt vilket test som failar.
       - name: Run pytest
         run: docker compose exec -T backend pytest tests/ -v
 
-      # Körs alltid, även om tester failar — annars hänger containrar kvar.
+      # Körs alltid, även om tester failar.
       - name: Stop services
         if: always()
         run: docker compose down -v
@@ -63,8 +73,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Node installeras direkt på runnern, inte i Docker.
-      # cache: npm sparar node_modules mellan körningar → snabbare CI.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -72,17 +80,11 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      # npm ci är snabbare än npm install och garanterar exakta versioner
-      # från package-lock.json — viktigt för reproducerbara CI-byggen.
       - name: Install dependencies
         run: npm ci --prefix frontend
 
-      # ESLint — fångar typfel och kodstilsbrott.
       - name: Lint
         run: npm run lint --prefix frontend
 
-      # Jest — kör alla komponenttester.
-      # --runInBand kör tester seriellt (undviker race conditions i CI).
-      # --passWithNoTests hindrar CI från att misslyckas om inga tester hittas.
       - name: Run tests
         run: npm test --prefix frontend -- --runInBand --passWithNoTests

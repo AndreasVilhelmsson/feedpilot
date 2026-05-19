@@ -16,16 +16,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Backend och worker läser ./backend/.env — inte en .env i rooten.
-      # Skapar minimala värden som räcker för att starta tjänsten och köra tester.
-      # Riktiga API-nycklar behövs inte eftersom AI-anrop är mockade i testerna.
+      # Settings-modellen i config.py använder redis_host + redis_port (inte redis_url).
+      # Alla fältnamn matchar exakt vad pydantic-settings förväntar sig.
       - name: Create backend .env
         run: |
           cat > backend/.env << 'EOF'
           ANTHROPIC_API_KEY=test-key
           OPENAI_API_KEY=test-key
           DATABASE_URL=postgresql://feedpilot:feedpilot@postgres:5432/feedpilot
-          REDIS_URL=redis://redis:6379
+          REDIS_HOST=redis
+          REDIS_PORT=6379
           EOF
 
       # docker-compose.yml har platform: linux/arm64 på alla services (för Mac M-chip).
@@ -42,7 +42,6 @@ jobs:
             'until docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T postgres pg_isready -U feedpilot; do sleep 2; done'
 
       # Health-routern är registrerad med prefix /api/v1 i main.py.
-      # Rätt path är därför /api/v1/health — inte /health.
       - name: Wait for backend to be healthy
         run: |
           echo "Waiting for backend..."

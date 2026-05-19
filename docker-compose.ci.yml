@@ -1,0 +1,9 @@
+services:
+  backend:
+    platform: linux/amd64
+  postgres:
+    platform: linux/amd64
+  redis:
+    platform: linux/amd64
+  worker:
+    platform: linux/amd64

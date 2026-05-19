@@ -16,12 +16,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # GitHub Actions kör på linux/amd64. docker-compose.yml har platform: linux/arm64
-      # (satt för Mac M-chip). Den här env-variabeln overridar det globalt i CI
-      # utan att vi behöver ändra docker-compose.yml.
-      - name: Set Docker platform for CI
-        run: echo "DOCKER_DEFAULT_PLATFORM=linux/amd64" >> $GITHUB_ENV
-
       # Backend och worker läser ./backend/.env — inte en .env i rooten.
       # Skapar minimala värden som räcker för att starta tjänsten och köra tester.
       # Riktiga API-nycklar behövs inte eftersom AI-anrop är mockade i testerna.
@@ -34,10 +28,11 @@ jobs:
           REDIS_URL=redis://redis:6379
           EOF
 
-      # Startar postgres, redis och backend i bakgrunden.
-      # worker utelämnas medvetet — den behövs inte för att köra pytest.
+      # docker-compose.yml har platform: linux/arm64 på alla services (för Mac M-chip).
+      # docker-compose.ci.yml overridar detta till linux/amd64 för GitHub Actions runner.
+      # worker utelämnas medvetet — behövs inte för att köra pytest.
       - name: Build and start services
-        run: docker compose up -d --build postgres redis backend
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --build postgres redis backend
 
       # Väntar tills postgres accepterar anslutningar.
       # Utan denna wait kan tester misslyckas med "connection refused".
@@ -45,7 +40,7 @@ jobs:
         run: |
           echo "Waiting for postgres..."
           timeout 60 bash -c \
-            'until docker compose exec -T postgres pg_isready -U feedpilot; do sleep 2; done'
+            'until docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T postgres pg_isready -U feedpilot; do sleep 2; done'
 
       # Väntar tills FastAPI är uppe och svarar på /health.
       # Porten är 8010 (mappad från 8000 inuti containern).
@@ -57,12 +52,12 @@ jobs:
 
       # Kör alla tester inuti backend-containern, precis som lokalt.
       - name: Run pytest
-        run: docker compose exec -T backend pytest tests/ -v
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T backend pytest tests/ -v
 
       # Körs alltid, även om tester failar.
       - name: Stop services
         if: always()
-        run: docker compose down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 
   # ── Frontend ──────────────────────────────────────────────────────────────
   frontend:

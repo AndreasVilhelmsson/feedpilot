@@ -24,7 +24,7 @@ class StatsService:
     def get_stats(self, db: Session) -> StatsResponse:
         """Fetch and compute catalog enrichment statistics.
 
-        Runs four aggregate queries and derives enrichment_rate.
+        Runs five aggregate queries and derives enrichment_rate.
         A total_products of zero returns 0.0 for enrichment_rate
         to avoid ZeroDivisionError.
 
@@ -32,14 +32,15 @@ class StatsService:
             db: Active SQLAlchemy database session.
 
         Returns:
-            StatsResponse with total, enriched, pending, failed
-            and enrichment_rate fields populated.
+            StatsResponse with total, enriched, pending, failed,
+            enrichment_rate and avg_enrichment_score fields populated.
         """
         total = self._repo.get_total_products(db)
         enriched = self._repo.get_enriched_count(db)
         pending = self._repo.get_pending_count(db)
         failed = self._repo.get_failed_count(db)
         return_risk_high = self._repo.get_return_risk_high_count(db)
+        avg_enrichment_score = self._repo.get_avg_enrichment_score(db)
 
         enrichment_rate = round(enriched / total * 100, 1) if total > 0 else 0.0
 
@@ -51,6 +52,7 @@ class StatsService:
             needs_attention=pending,
             return_risk_high=return_risk_high,
             enrichment_rate=enrichment_rate,
+            avg_enrichment_score=avg_enrichment_score,
         )
 
 

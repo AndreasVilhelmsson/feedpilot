@@ -18,6 +18,9 @@ class StatsResponse(BaseModel):
             (AI ran but returned no score — indicates a failed enrichment run).
         enrichment_rate: Percentage of total products that are enriched,
             rounded to one decimal place.
+        avg_enrichment_score: Mean overall_score across the latest AnalysisResult
+            per product, rounded to one decimal place. None when no enriched
+            products exist.
     """
 
     total_products: int = Field(description="Total products in catalog.")
@@ -28,4 +31,8 @@ class StatsResponse(BaseModel):
     return_risk_high: int = Field(description="Products with latest analysis flagged as high return risk.")
     enrichment_rate: float = Field(
         description="enriched / total_products * 100, rounded to 1 decimal."
+    )
+    avg_enrichment_score: float | None = Field(
+        default=None,
+        description="Average overall_score across latest AnalysisResult per product, rounded to 1 decimal. None if no enriched products exist.",
     )

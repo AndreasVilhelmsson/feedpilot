@@ -137,6 +137,47 @@ class StatsRepository:
         )
 
 
+    def get_avg_enrichment_score(self, db: Session) -> float | None:
+        """Return the average overall_score across the latest AnalysisResult per product.
+
+        Uses MAX(created_at) to identify the most recent run per product —
+        the canonical timestamp for ordering in this model. Other methods in
+        this file use MAX(id) for the same purpose; created_at is preferred
+        here because it reflects when the analysis was performed, not insertion
+        order, which matters if rows are ever back-filled or re-ordered.
+
+        Only rows with overall_score IS NOT NULL are included; products whose
+        latest run failed (score=None) do not contribute to the average.
+
+        Args:
+            db: Active database session.
+
+        Returns:
+            Average overall_score rounded to one decimal place, or None if no
+            enriched products exist.
+        """
+        # Subquery: most recent analysis timestamp per product
+        latest_subq = (
+            db.query(
+                AnalysisResult.product_id,
+                func.max(AnalysisResult.created_at).label("latest_created_at"),
+            )
+            .group_by(AnalysisResult.product_id)
+            .subquery()
+        )
+        result = (
+            db.query(func.avg(AnalysisResult.overall_score))
+            .join(
+                latest_subq,
+                (AnalysisResult.product_id == latest_subq.c.product_id)
+                & (AnalysisResult.created_at == latest_subq.c.latest_created_at),
+            )
+            .filter(AnalysisResult.overall_score.isnot(None))
+            .scalar()
+        )
+        return round(float(result), 1) if result is not None else None
+
+
 def get_stats_repository() -> StatsRepository:
     """Dependency injection factory for StatsRepository.
 

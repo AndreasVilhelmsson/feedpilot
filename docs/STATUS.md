@@ -1,6 +1,6 @@
 # FeedPilot — Status
 
-## Verifierat nuläge — 2026-05-01
+## Verifierat nuläge — 2026-05-15
 
 Det tidigare statusläget beskriver främst vad som är byggt. Efter reverse engineering och testkörning behöver vi skilja på:
 
@@ -15,12 +15,12 @@ Det tidigare statusläget beskriver främst vad som är byggt. Efter reverse eng
 |---|---|---|
 | Backend features | Många centrala flöden finns: ingest, enrichment, RAG, image analysis, jobs, variants | Byggt, men ojämnt reviewat |
 | Frontend features | Dashboard, catalog, processing, product detail och tester finns | Delvis verifierat |
-| Tester | Backend 56 tester passerar i Docker; frontend 7 tester passerar enligt FEED-060 baseline | Testtäckning är bättre men fortfarande låg jämfört med feature-yta |
+| Tester | Backend 71 tester passerar i Docker; frontend 14 tester passerar | Testtäckning är bättre men fortfarande låg jämfört med feature-yta |
 | Lint | Frontend lint passerar efter fix | Verifierat |
 | Backend lokal miljö | `pytest` lokalt failar utan backend deps (`fastapi` saknas) | Miljö behöver dokumenteras/fixas |
 | Docker runtime | API, postgres, redis och worker kör | Verifierat via `docker compose ps` |
 | AI-arkitektur | Prompt manager och AI core finns | Behöver flyttas mot kodstyrd enrichment |
-| Preflight/kostnadskontroll | Backend preflight finns som första pass via FEED-063 | Frontend UI och confirmation enforcement återstår |
+| Preflight/kostnadskontroll | Backend preflight finns; frontend preflight-modal och bulk-flöde implementerat via FEED-073 | Verifierat — 14/14 frontend-tester passerar |
 | Observability | Enrichment AI-request metadata loggas strukturerat som första pass | Delvis verifierat |
 | DB/migrations | `create_tables()` på startup | Inte produktionsmoget |
 | Layering | FEED-068 kartlade direkta DB-queries och repository-gap | Plan finns, implementation återstår |
@@ -49,7 +49,7 @@ docker compose exec backend pytest tests/
 
 Resultat:
 
-- 56 tester passerar.
+- 71 tester passerar.
 - 2 warnings: `@app.on_event("startup")` är deprecated i FastAPI.
 
 Lokal backend:
@@ -84,9 +84,8 @@ Ej aktivt täckt:
 - enrichment API endpoints
 - RAG/semantic search
 - ARQ job flow
-- products endpoints
+- products endpoints täcks för detail, enrich och apply-fields happy/error paths
 - variants
-- stats
 - apply accepted fields
 - image upload endpoint
 
@@ -104,7 +103,11 @@ Ej aktivt täckt:
 - FEED-067 lade till HTTP-level endpoint-tester för enrichment preflight och single enrichment.
 - FEED-069 lade till HTTP-level endpoint-tester för catalog före repository-refaktor.
 - FEED-069B flyttade catalog-queryn från API-lagret till `CatalogRepository`.
-- Backendtester passerar nu i Docker: 56 tester, 2 kända FastAPI-varningar.
+- FEED-070 lade till HTTP-level endpoint-tester för products före repository-refaktor.
+- FEED-071 lade till `avg_enrichment_score` i hela stats-kedjan (repo → service → schema → frontend) och kopplade `FeedQualityScore`-diagrammet till riktiga data.
+- FEED-072 investigation avslutad: Hypotes A bekräftad — avg_score 35.6 och return_risk_high 84.6% speglar testdatans kvalitet, inte ett pipeline-fel.
+- FEED-073 lade till preflight-modal, tvåstegsflöde för bulk enrichment och progressbar med completed/failed-states i dashboard.
+- Backendtester passerar nu i Docker: 71 tester, 2 kända FastAPI-varningar.
 
 ### Nuläge vs önskat AI-läge
 

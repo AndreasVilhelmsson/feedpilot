@@ -3,12 +3,60 @@
 This file provides **project knowledge** to Claude Code.
 Behavior rules and workflow live in `.claude/output-styles/feedpilot.md`.
 
-## Session Startup
+---
 
-At the start of each session, state:
-1. Which FEED-ticket you are working on
-2. Which files will be touched
-3. Estimated risk level (low / medium / high)
+## SESSION STARTUP — MANDATORY PROTOCOL
+
+**Every session, before writing a single line of code, run these commands in order:**
+
+### Step 1 — Orient yourself in the file system
+
+```bash
+ls feedpilot/docs/tickets/              # What tickets exist — NEVER create duplicates
+ls feedpilot/backend/app/               # Confirm layer structure
+ls feedpilot/backend/app/services/      # Existing services
+ls feedpilot/backend/app/repositories/  # Existing repositories
+ls feedpilot/backend/app/api/           # Existing routes
+ls feedpilot/frontend/app/              # Frontend pages
+```
+
+### Step 2 — Read these files (in this order)
+
+```
+1. feedpilot/docs/STATUS.md      — current verified state, known gaps, test results
+2. feedpilot/docs/BACKLOG.md     — all FEED-tickets with status (✅ done / ⬜ open)
+3. feedpilot/docs/ROADMAP.md     — sprint plan and what comes next
+```
+
+### Step 3 — State your session context
+
+Before anything else, write:
+- **Current sprint:** (e.g. Sprint 1.5 / Sprint 2)
+- **Next available FEED-number:** (highest existing + 1)
+- **Working on:** which FEED-ticket this session
+- **Files to be touched:** explicit list
+- **Risk level:** low / medium / high
+
+### Rules that follow from the above
+
+- Never create a folder or file without first verifying it doesn't already exist
+- Never create a ticket for work that's already marked ✅ in BACKLOG.md
+- Never start coding before stating your session context (Step 3)
+- The ticket comes first — write the ticket file, wait for review, then implement
+
+---
+
+## Workflow — One file at a time
+
+```
+1. Create ticket (docs/tickets/FEED-XXX.md) → wait for review
+2. Write test file first (TDD) → wait for review
+3. Write implementation file → wait for review
+4. Repeat step 3 for each additional file
+5. Update docs/STATUS.md and docs/BACKLOG.md when done
+```
+
+**Never change more than one file per step. Never skip review.**
 
 ---
 
@@ -22,7 +70,7 @@ FeedPilot is an AI-powered product data enrichment platform. E-commerce merchant
 
 - **Backend:** FastAPI + SQLAlchemy 2 + PostgreSQL 15 (pgvector) + ARQ/Redis async jobs
 - **Frontend:** Next.js 14 App Router (TypeScript, Tailwind CSS)
-- **AI:** Anthropic Claude (`claude-sonnet-4-5`) for enrichment + vision; OpenAI `text-embedding-3-small` for RAG
+- **AI:** Anthropic Claude (`claude-sonnet-4-6`) for enrichment + vision; OpenAI `text-embedding-3-small` for RAG
 
 ---
 
@@ -43,7 +91,7 @@ Backend API docs: http://localhost:8010/docs
 ## Common Commands
 
 ```bash
-# Backend tests (from repo root)
+# Backend tests (always via Docker — local pytest fails without deps)
 docker compose exec backend pytest tests/
 
 # Run a single test file
@@ -52,12 +100,17 @@ docker compose exec backend pytest tests/test_ingest.py -v
 # Frontend lint
 cd frontend && npm run lint
 
+# Frontend tests
+cd frontend && npm test -- --runInBand
+
 # Apply DB migrations
 docker compose exec backend alembic upgrade head
 
 # Tail worker logs
 docker compose logs -f worker
 ```
+
+**Verified baseline:** 71 backend tests pass, 14 frontend tests pass, lint passes.
 
 ---
 
@@ -66,12 +119,18 @@ docker compose logs -f worker
 | File | Layer | Role |
 |---|---|---|
 | `backend/app/services/enrichment_service.py` | Service | Core enrichment orchestration |
+| `backend/app/services/enrichment_planner.py` | Service | Deterministic model/tool/field planner |
+| `backend/app/services/preflight_service.py` | Service | Cost estimation before bulk jobs |
+| `backend/app/services/field_metadata.py` | Service | Per-field enrichment metadata registry |
 | `backend/app/core/ai.py` | Core | Claude/OpenAI clients, retry logic |
 | `backend/app/schemas/canonical.py` | Schema | `CanonicalProduct` — source of truth for AI input |
 | `backend/app/workers/tasks.py` | Worker | ARQ bulk enrichment task |
 | `backend/app/repositories/product_repository.py` | Repository | pgvector semantic search |
+| `backend/app/repositories/catalog_repository.py` | Repository | Paginated catalog queries |
+| `backend/app/repositories/stats_repository.py` | Repository | Aggregate stats queries incl. avg_enrichment_score |
 | `frontend/lib/api.ts` | Frontend | All API calls (axios instance) |
-| `frontend/lib/types.ts` | Frontend | Centralised TypeScript types |
+| `frontend/lib/types.ts` | Frontend | Centralised TypeScript types incl. PreflightResponse |
+| `frontend/components/ui/PreflightModal.tsx` | Frontend | Preflight confirmation modal (dumb component) |
 
 ---
 
@@ -96,13 +155,14 @@ FastAPI dependency injection (`Depends()`) wires repositories into services and 
 `POST /api/v1/products/{sku_id}/enrich` → `EnrichmentService.enrich_product()`:
 
 1. Fetch `Product` ORM → convert to `CanonicalProduct` (`schemas/canonical.py`)
-2. Determine `enrichment_priority` and `max_tokens` from `MAX_TOKENS_BY_PRIORITY` (all levels: 4096)
-3. Semantic search via pgvector (`repositories/product_repository.py::semantic_search`) for RAG context
-4. Call `ask_claude()` with `enrichment_v2` prompt + user message JSON
-5. Parse JSON response via `_extract_json()` (brace-depth scanning — handles truncation)
-6. Persist `AnalysisResult`, return structured dict
+2. `plan_enrichment(missing_fields)` → `EnrichmentPlan` (model, tools, target fields, RAG flag)
+3. `semantic_search()` via pgvector **only if** `plan.use_rag = True`
+4. `build_enrichment_payload()` — minimal input, only relevant fields
+5. `ask_claude()` with `enrichment_v2` prompt + user message JSON
+6. Parse JSON via `_extract_json()` → validate with `EnrichmentAIOutput` Pydantic schema
+7. Persist `AnalysisResult`, log `AIRequestMetadata`
 
-Bulk enrichment runs as an ARQ background task (`workers/tasks.py::enrich_bulk_task`), updating `Job.processed`/`Job.failed` and `job.result` after each product.
+Bulk enrichment: ARQ background task (`workers/tasks.py::enrich_bulk_task`), updates `Job.processed`/`Job.failed` per product.
 
 ### AI Client (`core/ai.py`)
 
@@ -156,6 +216,24 @@ Never send a full Product ORM to Claude — always use `CanonicalProduct`.
 - Do NOT put business logic in API routes
 - Docker ARM64: never install packages requiring native compilation without checking ARM64 compatibility first
 - Do NOT trust AI output without validating against Pydantic schemas first
+- Do NOT hardcode model ID in service layer — model comes from `EnrichmentPlan.model`
+
+---
+
+## Sprint Status (read BACKLOG.md for full detail)
+
+- **Sprint 1 — MVP Frontend:** ✅ Done (FEED-001–013, some gaps: FEED-009, FEED-013)
+- **Sprint 1.5 — Stabilisering:** ✅ Done (FEED-060–070)
+- **Sprint 2 — Auth + CI/CD:** 🔄 In progress (FEED-071–073 done, FEED-014+ not started)
+- **Sprint 3 — Multi-tenant:** ⬜ Not started
+- **Next ticket number: FEED-074**
+
+### Senaste session — 2026-05-15
+- FEED-071: `avg_enrichment_score` tillagd i hela stats-kedjan, dashboard visar riktiga data
+- FEED-072: Enrichment quality investigation — Hypotes A bekräftad, pipeline fungerar korrekt, testdatan är skev (inte ett pipeline-fel)
+- FEED-073: Preflight modal + progressbar implementerad och testad
+- ADR-006: TDD + en-fil-i-taget workflow dokumenterat
+- **Nästa prioritet: Auth — FEED-014 (JWT + login page)**
 
 ---
 
@@ -185,6 +263,8 @@ REDIS_URL=redis://redis:6379
 
 ## Definition of Done (Checklist)
 
+- [ ] Ticket created and reviewed before any code was written
+- [ ] Tests written before or alongside implementation (TDD)
 - [ ] Layer separation respected (no logic in API, no DB in Service)
 - [ ] Error handling: HTTP exceptions in API, `RuntimeError` in Service
 - [ ] ARQ job: `processed`/`failed`/`total` updated atomically
@@ -192,5 +272,6 @@ REDIS_URL=redis://redis:6379
 - [ ] Token usage logged per enrichment call
 - [ ] `CanonicalProduct` used as AI input (not raw ORM)
 - [ ] Minimal diff — no unrelated changes
-- [ ] Test added/updated for new logic
-- [ ] No obvious edge cases missing
+- [ ] `docker compose exec backend pytest tests/` passes
+- [ ] `cd frontend && npm run lint && npm test -- --runInBand` passes
+- [ ] `docs/STATUS.md` and `docs/BACKLOG.md` updated

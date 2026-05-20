@@ -22,12 +22,23 @@ Syfte: skapa kontroll över nuläget innan auth, multi-tenant och nya stora feat
 | FEED-068 | Layering cleanup plan                      | Medium    | 1.5    | ✅     |
 | FEED-069 | Catalog API test coverage                  | Hög       | 1.5    | ✅     |
 | FEED-069B | CatalogRepository extraction              | Hög       | 1.5    | ✅     |
+| FEED-070 | Products API test coverage                 | Hög       | 1.5    | ✅     |
 
 Rollfördelning:
 - Claude Code implementerar tickets.
 - Codex reviewar, kör tester, analyserar arkitektur och godkänner mot acceptance criteria.
 
 Se `docs/EXECUTION_PLAN.md` för detaljerade ticket-beskrivningar och arbetsflöde.
+
+---
+
+## Sprint 2 — Dashboard och datakvalitet
+
+| ID       | Titel                                      | Prioritet | Sprint | Status |
+|----------|--------------------------------------------|-----------|--------|--------|
+| FEED-071 | Dashboard: riktiga nyckeltal (avg score)   | Medium    | 2      | ✅     |
+| FEED-072 | Investigation: låg avg_score och hög return_risk_high | Hög | 2 | ✅     |
+| FEED-073 | Preflight-modal innan bulk enrichment      | Hög       | 2      | ✅     |
 
 ---
 

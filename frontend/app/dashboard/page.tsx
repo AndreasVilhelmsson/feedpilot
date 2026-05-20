@@ -1,11 +1,12 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
 import { api } from "@/lib/api"
-import type { StatsResponse, JobResponse, BulkEnrichResponse, CatalogProduct, CatalogResponse } from "@/lib/types"
+import type { StatsResponse, JobResponse, BulkEnrichResponse, CatalogProduct, CatalogResponse, PreflightResponse } from "@/lib/types"
 import { SkeletonCard } from "@/components/ui/SkeletonCard"
 import { UploadModal } from "@/components/ui/UploadModal"
+import { PreflightModal } from "@/components/ui/PreflightModal"
 
 // ── Helpers ── (chart data removed until backend aggregation endpoints exist)
 
@@ -29,9 +30,10 @@ function statusLabel(status: string) {
   return "Return risk"
 }
 
-type BulkStatus = "idle" | "processing" | "complete" | "failed"
+type BulkStatus = "idle" | "preflight" | "processing" | "complete" | "failed"
 
 function enrichButtonLabel(status: BulkStatus, progress: number): string {
+  if (status === "preflight") return "Beräknar..."
   if (status === "processing") return `Processing... ${progress}%`
   if (status === "complete") return "✓ Done"
   if (status === "failed") return "Failed — retry?"
@@ -83,8 +85,8 @@ function KpiCard({ label, value, delta, icon, positive, extraClass = "" }: KpiCa
   )
 }
 
-function FeedQualityScore() {
-  const overall = 73
+function FeedQualityScore({ score }: { score: number | null }) {
+  const overall = score ?? 0
   const circumference = 2 * Math.PI * 36
   const offset = circumference - (overall / 100) * circumference
   return (
@@ -102,22 +104,8 @@ function FeedQualityScore() {
             <span className="text-[10px] text-on-surface-variant">/ 100</span>
           </div>
         </div>
-        <div className="flex-1 space-y-2">
-          {[
-            { label: "Completeness", value: 82 },
-            { label: "Accuracy", value: 71 },
-            { label: "Richness", value: 64 },
-          ].map(({ label, value }) => (
-            <div key={label}>
-              <div className="flex justify-between text-xs mb-1">
-                <span className="text-on-surface-variant">{label}</span>
-                <span className="font-semibold text-on-surface">{value}%</span>
-              </div>
-              <div className="h-1.5 bg-surface-container-high rounded-full overflow-hidden">
-                <div className="h-full bg-primary rounded-full" style={{ width: `${value}%` }} />
-              </div>
-            </div>
-          ))}
+        <div className="flex-1">
+          <p className="text-xs text-on-surface-variant">Detaljerade sub-scores tillkommer</p>
         </div>
       </div>
     </div>
@@ -191,9 +179,14 @@ export default function DashboardPage() {
   const [showUpload, setShowUpload] = useState(false)
 
   // Bulk enrichment
-  const [bulkJobId, setBulkJobId] = useState<string | null>(null)
+  const bulkJobIdRef = useRef<string | null>(null)
   const [bulkProgress, setBulkProgress] = useState(0)
   const [bulkStatus, setBulkStatus] = useState<BulkStatus>("idle")
+  const [preflight, setPreflight] = useState<PreflightResponse | null>(null)
+  const [showPreflightModal, setShowPreflightModal] = useState(false)
+  const [bulkProcessed, setBulkProcessed] = useState(0)
+  const [bulkTotal, setBulkTotal] = useState(0)
+  const [bulkFailed, setBulkFailed] = useState(0)
 
   // ── Recent activity fetcher ───────────────────────────────────────────────
   const fetchRecentActivity = useCallback(async () => {
@@ -241,44 +234,67 @@ export default function DashboardPage() {
 
   // ── STEG 5: Bulk job polling ──────────────────────────────────────────────
   useEffect(() => {
-    if (!bulkJobId) return
+    if (bulkStatus !== "processing") return
 
     const interval = setInterval(async () => {
+      const jobId = bulkJobIdRef.current
+      if (!jobId) return
+
       try {
-        const { data } = await api.get<JobResponse>(`/api/v1/jobs/${bulkJobId}`)
+        const { data } = await api.get<JobResponse>(`/api/v1/jobs/${jobId}`)
         setBulkProgress(data.progress_pct)
+        setBulkProcessed(data.processed ?? 0)
+        setBulkTotal(data.total ?? 0)
+        setBulkFailed(data.failed ?? 0)
 
         if (data.status === "complete" || data.status === "completed") {
           clearInterval(interval)
           setBulkStatus("complete")
-          setBulkJobId(null)
           fetchStats()
         } else if (data.status === "failed") {
           clearInterval(interval)
           setBulkStatus("failed")
-          setBulkJobId(null)
         }
       } catch {
         clearInterval(interval)
         setBulkStatus("failed")
-        setBulkJobId(null)
       }
     }, 3000)
 
     return () => clearInterval(interval)
-  }, [bulkJobId, fetchStats])
+  }, [bulkStatus, fetchStats])
 
-  // ── Bulk enrich handler ───────────────────────────────────────────────────
+  // ── Bulk enrich handlers ─────────────────────────────────────────────────
   async function handleEnrichAll() {
-    if (bulkStatus === "processing") return
-    setBulkStatus("processing")
-    setBulkProgress(0)
+    if (bulkStatus === "preflight" || bulkStatus === "processing") return
+    setBulkStatus("preflight")
+    bulkJobIdRef.current = null
     try {
-      const { data } = await api.post<BulkEnrichResponse>("/api/v1/enrich/bulk", { limit: 10 })
-      setBulkJobId(data.job_id)
+      const { data } = await api.post<PreflightResponse>("/api/v1/enrich/preflight", { limit: 10 })
+      setPreflight(data)
+      setShowPreflightModal(true)
     } catch {
       setBulkStatus("failed")
     }
+  }
+
+  async function handleConfirmEnrich() {
+    setShowPreflightModal(false)
+    setBulkStatus("processing")
+    setBulkProgress(0)
+    bulkJobIdRef.current = null
+    try {
+      const { data } = await api.post<BulkEnrichResponse>("/api/v1/enrich/bulk", { limit: 10 })
+      bulkJobIdRef.current = data.job_id
+    } catch {
+      setBulkStatus("failed")
+    }
+  }
+
+  function handleCancelEnrich() {
+    setShowPreflightModal(false)
+    setPreflight(null)
+    setBulkStatus("idle")
   }
 
   // ── KPI data from stats ───────────────────────────────────────────────────
@@ -391,7 +407,7 @@ export default function DashboardPage() {
             </button>
             <button
               onClick={handleEnrichAll}
-              disabled={bulkStatus === "processing"}
+              disabled={bulkStatus === "preflight" || bulkStatus === "processing"}
               className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl bg-primary text-white hover:bg-primary-container transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
@@ -406,6 +422,36 @@ export default function DashboardPage() {
             </button>
           </div>
         </div>
+
+        {/* Enrich progress */}
+        {(bulkStatus === "processing" || bulkStatus === "complete" || bulkStatus === "failed") && (
+          <div className="mt-4">
+            {bulkStatus === "processing" && (
+              <div className="flex flex-col gap-1.5">
+                <div className="h-2 w-full rounded-full bg-surface-container overflow-hidden">
+                  <div
+                    data-testid="enrich-progress-fill"
+                    className="h-full rounded-full bg-primary transition-all duration-300"
+                    style={{ width: `${bulkProgress}%` }}
+                  />
+                </div>
+                <p className="text-xs text-on-surface-variant">
+                  {bulkProgress}% — {bulkProcessed} produkter klara
+                </p>
+              </div>
+            )}
+            {bulkStatus === "complete" && (
+              <p className="text-sm font-medium text-[#1a7f4b]">
+                ✓ Klart — {bulkProcessed}/{bulkTotal} enrichade
+              </p>
+            )}
+            {bulkStatus === "failed" && (
+              <p className="text-sm font-medium text-error">
+                Fel — {bulkFailed} produkter misslyckades
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Content */}
@@ -424,7 +470,7 @@ export default function DashboardPage() {
         {/* Main grid */}
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-8">
-            <FeedQualityScore />
+            <FeedQualityScore score={stats?.avg_enrichment_score ?? null} />
             {/* ConfidenceTrend + EnrichmentByCategory hidden — awaiting backend aggregation endpoints */}
           </div>
           <div className="col-span-4">
@@ -441,6 +487,14 @@ export default function DashboardPage() {
           setShowUpload(false)
           fetchStats()
         }}
+      />
+
+      {/* Preflight modal */}
+      <PreflightModal
+        isOpen={showPreflightModal}
+        preflight={preflight}
+        onConfirm={handleConfirmEnrich}
+        onCancel={handleCancelEnrich}
       />
     </div>
   )
